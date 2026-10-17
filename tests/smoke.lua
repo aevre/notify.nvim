@@ -70,6 +70,20 @@ check(persistent.closed and first.closed and hidden.closed, "dismissal")
 notify.clear_history()
 check(#notify.history() == 0, "clear history")
 
+local original_in_fast_event = vim.in_fast_event
+vim.in_fast_event = function()
+	return true
+end
+local deferred = vim.notify("deferred", vim.log.levels.INFO, { timeout = false })
+vim.in_fast_event = original_in_fast_event
+vim.wait(100, function()
+	return #notify.history() > 0
+end, 10)
+local deferred_record = notify.history()[1]
+check(deferred_record and deferred.id == deferred_record.id, "fast-event notification id")
+notify.dismiss()
+notify.clear_history()
+
 local received = {}
 local unsubscribe = notify.subscribe(
 	"notify-test-level",

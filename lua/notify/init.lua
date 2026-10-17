@@ -281,20 +281,22 @@ local function close(record, animate)
 	layout()
 end
 
-local function notify_impl(message, level, opts, source)
+local function normalize_id(ref)
+	return type(ref) == "table" and ref.id or ref
+end
+
+local function find_record(ref)
+	if ref == nil then
+		return nil
+	end
+	local id = normalize_id(ref)
+	return M._notifications[M._ids[id]] or M._notifications[id]
+end
+
+local function notify_impl(message, level, opts, source, reserved_id)
 	opts = opts or {}
 	local info, level_name = level_info(level or vim.log.levels.INFO)
-	local function normalize_id(ref)
-		return type(ref) == "table" and ref.id or ref
-	end
 	local resolved_id = opts.id ~= nil and normalize_id(opts.id) or normalize_id(opts.replace)
-	local function find_record(ref)
-		if ref == nil then
-			return nil
-		end
-		local id = normalize_id(ref)
-		return M._notifications[M._ids[id]] or M._notifications[id]
-	end
 	local old = find_record(opts.replace) or find_record(opts.id)
 	if old and (opts.replace ~= nil or opts.id ~= nil) then
 		if message == nil then
@@ -342,8 +344,12 @@ local function notify_impl(message, level, opts, source)
 			or nil
 		return old
 	end
-	M._next_id = M._next_id + 1
-	local id = M._next_id
+	if reserved_id then
+		M._next_id = math.max(M._next_id, reserved_id)
+	else
+		M._next_id = M._next_id + 1
+	end
+	local id = reserved_id or M._next_id
 	local title = title_text(opts.title, source == "notify" and "Notification" or "Messages")
 	local record = {
 		id = id,
@@ -389,8 +395,16 @@ local function notify(message, level, opts)
 	local meta = { level_provided = level ~= nil }
 	if vim.in_fast_event() then
 		meta.fast = true
-		local id = Bus.emit("notify", level_info(level or vim.log.levels.INFO).value, message, opts, meta)
-		return { id = id }
+		local old = find_record(opts and opts.replace) or find_record(opts and opts.id)
+		if old then
+			meta.notify_id = old.id
+		else
+			M._next_id = M._next_id + 1
+			meta.notify_id = M._next_id
+		end
+		meta.result = { id = meta.notify_id }
+		Bus.emit("notify", level_info(level or vim.log.levels.INFO).value, message, opts, meta)
+		return meta.result
 	end
 	local bus_id = Bus.emit("notify", level_info(level or vim.log.levels.INFO).value, message, opts, meta)
 	local record = M._bus_records[bus_id]
@@ -422,9 +436,14 @@ function M.setup(opts)
 				message.content,
 				level,
 				message.data or {},
-				message.tag == "notify" and "notify" or "message"
+				message.tag == "notify" and "notify" or "message",
+				message.meta.notify_id
 			)
-			if not message.meta.fast then
+			if message.meta.fast then
+				if message.meta.result then
+					message.meta.result.id = record.id
+				end
+			else
 				M._bus_records[message.id] = record
 			end
 		end
