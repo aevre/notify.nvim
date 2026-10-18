@@ -37,6 +37,7 @@
 
 local M = {}
 
+---@type win
 local Win = require("win")
 local levels = require("notify.levels")
 local util = require("notify.util")
@@ -50,7 +51,7 @@ local util = require("notify.util")
 ---@field spinner? boolean|string[]
 ---@field spinner_frames? string[]
 ---@field spinner_interval? integer
----@field win? table
+---@field win? win
 ---@field history notify.FidgetRecord
 
 ---@class notify.FidgetRecord
@@ -75,7 +76,7 @@ local progress = {}
 local current_opts = {}
 ---@type integer|nil
 local render_timer, spinner_timer
----@type notify.Animate|nil
+---@type animate|nil
 local Animate
 local next_message_id = 0
 local history = {}
@@ -279,7 +280,7 @@ local function render()
 end
 
 ---@param opts? boolean|notify.FidgetConfig
----@param animate? notify.Animate
+---@param animate? animate
 function M.setup(opts, animate)
 	M.restore()
 	if type(opts) == "table" then
