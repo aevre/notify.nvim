@@ -50,6 +50,19 @@ local levels = require("notify.levels")
 ---@field spinner_frames? string[]
 ---@field spinner_interval? integer
 ---@field win? table
+---@field history notify.FidgetRecord
+
+---@class notify.FidgetRecord
+---@field id string
+---@field source string
+---@field level string
+---@field title string[]
+---@field message string[]
+---@field time number
+---@field state string
+---@field client_id? integer|string
+---@field token? string|integer
+---@field percentage? number
 
 ---@class notify.FidgetEntry
 ---@field key string
@@ -64,6 +77,7 @@ local render_timer, spinner_timer
 ---@type fun(from: number, to: number, callback: fun(value: number), opts?: table)|nil
 local Animate
 local next_message_id = 0
+local history = {}
 local spinner_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
 ---@param value? any
@@ -255,6 +269,9 @@ local function clear()
 		if task.win then
 			task.win:close()
 		end
+		if task.history and task.history.state == "active" then
+			task.history.state = "dismissed"
+		end
 	end
 	progress = {}
 	stop_timer(render_timer)
@@ -293,6 +310,50 @@ function M.restore()
 	clear()
 end
 
+---@return notify.FidgetRecord[]
+function M.history()
+	return vim.deepcopy(history)
+end
+
+function M.clear_history()
+	history = {}
+end
+
+---@param record notify.FidgetRecord
+local function remember(record)
+	history[#history + 1] = record
+	while #history > 200 do
+		table.remove(history, 1)
+	end
+end
+
+---@param key string
+---@param task? notify.FidgetTask
+---@param opts notify.FidgetProgressOpts
+---@return notify.FidgetTask
+local function update_task_history(key, task, opts)
+	task = task or {}
+	if not task.history then
+		task.history = {
+			id = "fidget:" .. key,
+			source = "fidget",
+			level = levels.name(opts.level),
+			title = { opts.title or "", vim.fn.strftime("%T") },
+			message = {},
+			time = vim.fn.localtime(),
+			state = "active",
+			client_id = opts.client_id,
+			token = opts.token,
+		}
+		remember(task.history)
+	end
+	task.history.title[1] = task.title or ""
+	task.history.message = vim.split(tostring(task.message or ""), "\n", { plain = true })
+	task.history.level = task.level or "INFO"
+	task.history.percentage = task.percentage
+	return task
+end
+
 ---@param message string
 ---@param opts? notify.FidgetMessageOpts
 ---@return string message_id
@@ -300,17 +361,30 @@ function M.notify(message, opts)
 	opts = opts or {}
 	next_message_id = next_message_id + 1
 	local key = "message:" .. next_message_id
+	local title = opts.title or ""
+	local record = {
+		id = "fidget:" .. key,
+		source = "fidget",
+		level = levels.name(opts.level),
+		title = { title, vim.fn.strftime("%T") },
+		message = vim.split(tostring(message), "\n", { plain = true }),
+		time = vim.fn.localtime(),
+		state = "active",
+	}
+	remember(record)
 	local task = {
 		started = (vim.uv or vim.loop).now(),
-		title = opts.title,
+		title = title,
 		message = message,
 		icon = opts.icon,
 		level = levels.name(opts.level),
+		history = record,
 	}
 	progress[key] = task
 	vim.schedule(render)
 	vim.defer_fn(function()
 		if progress[key] == task then
+			task.history.state = "finished"
 			if task.win then
 				task.win:close()
 			end
@@ -339,7 +413,18 @@ function M.progress(message, opts)
 	local key = tostring(opts.client_id or "user") .. ":" .. tostring(opts.token)
 	if opts.kind == "end" then
 		local task = progress[key]
-		if task and task.win then
+		if not task and (message or opts.title) then
+			task = update_task_history(key, nil, opts)
+			task.message = message or ""
+		end
+		if not task then
+			return key
+		end
+		task.history.state = "finished"
+		if message and message ~= "" then
+			task.history.message = vim.split(tostring(message), "\n", { plain = true })
+		end
+		if task.win then
 			task.win:close()
 		end
 		progress[key] = nil
@@ -353,8 +438,10 @@ function M.progress(message, opts)
 	previous.level = levels.name(opts.level or previous.level)
 	previous.spinner_interval = opts.spinner_interval or previous.spinner_interval
 	previous.spinner_frames = opts.spinner_frames or previous.spinner_frames
+	previous = update_task_history(key, previous, opts)
 	if opts.kind == "end" then
 		previous.spinner = false
+		previous.history.state = "finished"
 	elseif opts.spinner ~= nil then
 		previous.spinner = opts.spinner == true and true
 			or type(opts.spinner) == "table" and spinner_frames_for(opts.spinner)

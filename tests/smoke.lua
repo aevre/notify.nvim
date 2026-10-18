@@ -176,7 +176,9 @@ remove_routed()
 notify.setup({ animate = false, lsp_progress = true })
 check(autocmd_count() > 0, "lsp progress setup")
 local fidget = require("notify.fidget")
+fidget.clear_history()
 fidget.notify("Build finished", { title = "Build", icon = "✓", timeout = 100 })
+check(#fidget.history() == 1 and fidget.history()[1].source == "fidget", "fidget message history")
 local token = fidget.progress("building", {
 	client_id = 7,
 	token = "single-line",
@@ -186,6 +188,7 @@ local token = fidget.progress("building", {
 	icon = "LSP",
 })
 check(token == "7:single-line", "fidget progress API identifies task")
+check(#fidget.history() == 2 and fidget.history()[2].state == "active", "fidget progress history")
 check(require("notify.levels").name(vim.log.levels.WARN) == "WARN", "shared level metadata")
 local fidget_win
 vim.wait(250, function()
@@ -295,7 +298,10 @@ vim.api.nvim_exec_autocmds("LspProgress", {
 })
 vim.lsp.get_client_by_id = original_get_client
 fidget.dismiss()
-check(#notify.history({ include_hidden = true }) == history_before_progress, "progress outside history")
+check(#notify.history({ include_hidden = true }) == history_before_progress, "progress outside notification history")
+check(fidget.history()[2].state == "dismissed", "fidget dismissal updates history")
+fidget.clear_history()
+check(#fidget.history() == 0, "clear fidget history")
 notify.setup({ animate = false, lsp_progress = false })
 check(autocmd_count() == 0, "lsp progress cleanup")
 
