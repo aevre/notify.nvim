@@ -21,12 +21,14 @@ local notify = require("notify")
 
 notify.setup({
 	animate = false,
+	notify = false,
 	timeout = 40,
 	max_history = 20,
 	lsp_progress = false,
 })
 notify.dismiss({ pending = true })
 notify.clear_history()
+check(vim.notify ~= original_notify, "notify setup always installs vim.notify")
 
 local first = vim.notify("first message", vim.log.levels.INFO, {
 	title = "Smoke",

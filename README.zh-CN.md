@@ -65,7 +65,6 @@ require("notify").setup({
 | `routes` | `nil` | 有序的 bus 路由规则列表；省略时由内置 notify 路由处理 `vim.notify`、`notify.send()` 和 `msg.show.*` 事件。 |
 | `fidget` | `nil` | Fidget 进度/消息配置，包括 `max_queue`、边距、动画、超时、`spinner_frames` 和 `spinner_interval`。 |
 | `lsp_progress` | `false` | 启用独立 LSP producer，将 Neovim `LspProgress` 事件直接交给 `notify.fidget.progress()`。 |
-| `notify` | `true` | 将 notify.nvim 安装为 `vim.notify`；设为 `false` 可保留已有的 `vim.notify` 处理器。 |
 
 Fidget 后端可通过 `fidget = { max_queue = 5, spinner_interval = 200, spinner_frames = { "⠁", "⠂", "⠄", "⠐", "⠠", "⠰" } }` 配置。`spinner_interval` 是每帧的毫秒数，最小为 50ms。进度任务可通过 `spinner_interval`、`spinner_frames` 或 `spinner = { ... }` 覆盖默认速度和帧列表；`spinner = true` 使用配置中的默认帧。帧列表必须非空且每一项都是字符串，否则会回退到默认帧。Fidget 消息支持 `timeout`，也可以设置 `title`、`level` 和 `icon`；`level` 支持 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR` 和 `none`。每个并发任务都会使用独立的透明无边框浮窗；新任务从底部加入，并通过与通知相同的 animate.nvim 动画将旧任务向上顶。`max_queue` 限制可见任务浮窗数量；多出的任务按到达顺序等待已有任务结束。Fidget 是通用消息后端；独立的 LSP progress producer 将进度事件直接交给它。LSP 进度会启用 spinner，并使用自己指定的六帧 spinner 列表。
 

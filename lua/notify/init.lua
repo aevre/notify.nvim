@@ -714,11 +714,7 @@ function M.setup(opts)
 	if original_notify == nil then
 		original_notify = vim.notify
 	end
-	if config.notify == false then
-		vim.notify = original_notify
-	else
-		vim.notify = notify
-	end
+	vim.notify = notify
 	Fidget.setup(config.fidget, Animate)
 	if config.lsp_progress then
 		LspProgress.setup(Fidget)
