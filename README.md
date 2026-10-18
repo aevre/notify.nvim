@@ -41,7 +41,10 @@ require("notify").setup({
   gap = 0,
   margin = { top = 1, right = 1, bottom = 0 },
   animate = true,
-  lsp_progress = false,
+  routes = {
+    { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
+    { match = { exact = { "notify" }, source = "notify.send" }, to = "fidget" },
+  },
 })
 ```
 
@@ -58,7 +61,8 @@ require("notify").setup({
 | `top_down` | `true` | Stack notifications from the top when true. |
 | `max_history` | `200` | Number of records retained in history. |
 | `animate` | `true` | Use animate.nvim for stacking and slide transitions. |
-| `lsp_progress` | `false` | Enable the separate `notify.fidget` bus backend for LSP progress in a full-width, borderless bottom-right float, outside notification history. |
+| `routes` | `nil` | Ordered list of bus routing rules. When omitted, the built-in `notify` and `fidget` routes are used. |
+| `lsp_progress` | `false` | Optionally publish Neovim `LspProgress` events to the `fidget` bus backend. |
 
 The default layout follows the compact nvim-notify/Snacks style: each notification has a severity-colored title row, a separator, and highlighted message content inside a bordered window. Notifications stack at the top-right and slide in from the right with animate.nvim; width and height may be fractional editor limits. LSP progress is a separate `notify.fidget` bus backend: it consumes only `lsp.progress.*`, renders a full-width borderless bottom-right float with right-aligned, single-line spinner, task, message, and percentage highlights, and is not added to notification history.
 
@@ -78,7 +82,25 @@ notify.restore()
 
 The module is callable and is equivalent to `notify.notify(message, level, opts)`. History records expose `id`, uppercase `level`, `level_name`, `level_value`, `title`, `message`, and `time`, along with their current lifecycle state.
 
-The event bus is available for integrations:
+The event bus is available for integrations. Subscribers can optionally register a backend name as the fifth argument; configured routes then select which named backend receives matching events. The first matching route wins. `match` accepts the same `exact`, `prefix`, and Lua-pattern `fuzzy` selectors as subscriptions, plus an optional `source` filter. `to` can be one backend name or a list. With custom routes, unmatched messages are not sent to named backends; unnamed subscribers still receive events.
+
+`vim.notify` emits the `notify` tag with source `vim.notify`; `notify.send()` emits the same tag with source `notify.send`. This lets routes distinguish messages from other plugins versus calls made through this plugin's API. `notify.fidget.send()` starts a user-created progress item and returns its token; use `notify.fidget.update(token, message, opts)` and `notify.fidget.finish(token, message, opts)` to update and finish it.
+
+```lua
+local notify = require("notify")
+notify.setup({
+  routes = {
+    { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
+    { match = { exact = { "notify" }, source = "notify.send" }, to = "fidget" },
+    { match = { prefix = { "build." } }, to = { "notify", "fidget" } },
+  },
+})
+
+notify.send("Internal event", vim.log.levels.INFO)
+local token = notify.fidget.send("Build", "Starting")
+notify.fidget.update(token, "Compiling", { percentage = 40 })
+notify.fidget.finish(token, "Done")
+```
 
 ```lua
 local unsubscribe = notify.subscribe(

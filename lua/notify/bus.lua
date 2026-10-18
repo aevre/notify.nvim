@@ -15,6 +15,9 @@ local function level_value(level)
 end
 
 local function matches(interested, tag)
+	if not interested.exact and not interested.prefix and not interested.fuzzy then
+		return true
+	end
 	for _, value in ipairs(interested.exact or {}) do
 		if tag == value then
 			return true
@@ -33,13 +36,44 @@ local function matches(interested, tag)
 	return false
 end
 
-function M.subscribe(id, interested, min_level, handler)
+function M.set_routes(routes)
+	M.routes = routes
+end
+
+local function routed_to(subscriber, message)
+	if not subscriber.backend then
+		return true
+	end
+	local routes = M.routes
+		or {
+			{ match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
+			{ match = { exact = { "notify" }, source = "notify.send" }, to = "notify" },
+			{ match = { prefix = { "msg.show." } }, to = "notify" },
+			{ match = { prefix = { "lsp.progress." } }, to = "fidget" },
+		}
+	for _, route in ipairs(routes) do
+		local selector = route.match or {}
+		if matches(selector, message.tag) and (not selector.source or selector.source == message.meta.source) then
+			local targets = type(route.to) == "table" and route.to or { route.to }
+			for _, target in ipairs(targets) do
+				if target == subscriber.backend then
+					return true
+				end
+			end
+			return false
+		end
+	end
+	return false
+end
+
+function M.subscribe(id, interested, min_level, handler, backend)
 	assert(type(id) == "string" and type(handler) == "function", "notify.bus: invalid subscriber")
 	assert(not M.subscribers[id], "notify.bus: subscriber already exists: " .. id)
 	M.subscribers[id] = {
 		interested = interested or {},
 		min_level = level_value(min_level or vim.log.levels.TRACE),
 		handler = handler,
+		backend = backend,
 	}
 	return function()
 		M.subscribers[id] = nil
@@ -58,7 +92,11 @@ local function drain()
 	while #M.queue > 0 do
 		local message = table.remove(M.queue, 1)
 		for _, subscriber in pairs(M.subscribers) do
-			if message.level >= subscriber.min_level and matches(subscriber.interested, message.tag) then
+			if
+				message.level >= subscriber.min_level
+				and matches(subscriber.interested, message.tag)
+				and routed_to(subscriber, message)
+			then
 				local ok, err = pcall(subscriber.handler, message)
 				if not ok then
 					vim.schedule(function()

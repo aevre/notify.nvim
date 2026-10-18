@@ -456,9 +456,11 @@ local function notify(message, level, opts)
 			meta.notify_id = M._next_id
 		end
 		meta.result = { id = meta.notify_id }
+		meta.source = (opts and opts.source) or "vim.notify"
 		Bus.emit("notify", level_info(level or vim.log.levels.INFO).value, message, opts, meta)
 		return meta.result
 	end
+	meta.source = (opts and opts.source) or "vim.notify"
 	local bus_id = Bus.emit("notify", level_info(level or vim.log.levels.INFO).value, message, opts, meta)
 	local record = M._bus_records[bus_id]
 	M._bus_records[bus_id] = nil
@@ -491,6 +493,7 @@ function M.setup(opts)
 	Fidget.restore()
 	LspProgress.restore()
 	Bus.unsubscribe("notify.nvim")
+	Bus.set_routes(config.routes)
 	Bus.subscribe(
 		"notify.nvim",
 		{ exact = { "notify" }, prefix = { "msg.show." } },
@@ -514,7 +517,8 @@ function M.setup(opts)
 			else
 				M._bus_records[message.id] = record
 			end
-		end
+		end,
+		"notify"
 	)
 	local layout_group = vim.api.nvim_create_augroup("notify_layout", { clear = true })
 	vim.api.nvim_create_autocmd("VimResized", {
@@ -523,9 +527,7 @@ function M.setup(opts)
 			for _, record in ipairs(visible()) do
 				render(record)
 			end
-			if config.lsp_progress then
-				Fidget.resize(config.lsp_progress == true and {} or config.lsp_progress)
-			end
+			Fidget.resize(config.fidget or {})
 		end,
 	})
 	if original_notify == nil then
@@ -536,8 +538,9 @@ function M.setup(opts)
 	else
 		vim.notify = notify
 	end
+	Fidget.setup(config.fidget, Bus)
 	if config.lsp_progress then
-		M.setup_progress(config.lsp_progress)
+		LspProgress.setup(Bus)
 	end
 	return M
 end
@@ -546,16 +549,24 @@ function M.notify(message, level, opts)
 	return notify(message, level, opts)
 end
 
-function M.emit(tag, level, content, data)
-	local id = Bus.emit(tag, level, content, data, { level_provided = level ~= nil, fast = vim.in_fast_event() })
+function M.emit(tag, level, content, data, meta)
+	meta = vim.tbl_extend("force", meta or {}, { level_provided = level ~= nil, fast = vim.in_fast_event() })
+	local id = Bus.emit(tag, level, content, data, meta)
 	local record = M._bus_records[id]
 	M._bus_records[id] = nil
 	return record and record.id or id
 end
 
-function M.subscribe(id, interested, min_level, handler)
-	return Bus.subscribe(id, interested, min_level, handler)
+function M.subscribe(id, interested, min_level, handler, backend)
+	return Bus.subscribe(id, interested, min_level, handler, backend)
 end
+
+function M.send(message, level, opts)
+	opts = vim.tbl_extend("force", opts or {}, { source = "notify.send" })
+	return notify(message, level, opts)
+end
+
+M.fidget = Fidget
 
 function M.unsubscribe(id)
 	return Bus.unsubscribe(id)
@@ -585,6 +596,11 @@ end
 function M.setup_progress(opts)
 	LspProgress.setup(Bus)
 	return Fidget.setup(opts, Bus)
+end
+
+function M.send(message, level, opts)
+	opts = vim.tbl_extend("force", opts or {}, { source = "notify.send" })
+	return notify(message, level, opts)
 end
 
 function M.restore()

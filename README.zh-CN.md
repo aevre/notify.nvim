@@ -41,7 +41,10 @@ require("notify").setup({
   gap = 0,
   margin = { top = 1, right = 1, bottom = 0 },
   animate = true,
-  lsp_progress = false,
+  routes = {
+    { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
+    { match = { exact = { "notify" }, source = "notify.send" }, to = "fidget" },
+  },
 })
 ```
 
@@ -58,7 +61,8 @@ require("notify").setup({
 | `top_down` | `true` | 为 true 时从顶部开始堆叠通知。 |
 | `max_history` | `200` | 历史记录保留数量。 |
 | `animate` | `true` | 使用 animate.nvim 处理堆叠和滑入滑出动画。 |
-| `lsp_progress` | `false` | 启用独立的 `notify.fidget` bus 后端，在尽可能全宽的右下角无边框浮窗中显示 LSP 进度，且不进入通知历史。 |
+| `routes` | `nil` | 有序的 bus 路由规则列表；省略时使用内置的 notify/fidget 默认路由。 |
+| `lsp_progress` | `false` | 可选地将 Neovim `LspProgress` 事件发布到 `fidget` bus 后端。 |
 
 默认布局参考 nvim-notify/Snacks 的 compact 样式：每条通知都有按严重级别着色的顶部标题、分割线和高亮正文，并显示在带边框的窗口中。通知堆叠在右上角，通过 animate.nvim 从右侧滑入；宽度和高度支持编辑器尺寸比例。LSP 进度由独立的 `notify.fidget` bus 后端处理，只消费 `lsp.progress.*` 事件，在尽可能全宽的右下角无边框浮窗中右对齐显示单行 spinner、任务、消息和百分比高亮，并且不进入通知历史。
 
@@ -78,7 +82,27 @@ notify.restore()
 
 模块可以直接调用，等价于 `notify.notify(message, level, opts)`。历史记录包含 `id`、大写的 `level`、`level_name`、`level_value`、`title`、`message` 和 `time`，以及当前生命周期状态。
 
-事件总线可供集成使用：
+事件总线可供集成使用。订阅时可将后端名作为第五个参数；配置路由后，只有命中的命名后端会收到事件。按顺序匹配，第一条命中规则生效。`match` 支持 `exact`、`prefix`、Lua 模式 `fuzzy`，以及可选的 `source` 来源过滤；`to` 可指定单个后端名或后端列表。使用自定义路由时，未命中的消息不会发送到命名后端；未命名的订阅者仍可收到事件。
+
+`vim.notify` 使用 `notify` 标签和 `vim.notify` 来源；`notify.send()` 使用相同标签、来源为 `notify.send`，因此可以把其他插件的通知和显式调用区分路由。`notify.fidget.send()` 启动用户进度任务并返回 token，之后使用 `notify.fidget.update(token, message, opts)` 更新，使用 `notify.fidget.finish(token, message, opts)` 结束。
+
+```lua
+local notify = require("notify")
+notify.setup({
+  routes = {
+    { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
+    { match = { exact = { "notify" }, source = "notify.send" }, to = "fidget" },
+    { match = { prefix = { "build." } }, to = { "notify", "fidget" } },
+  },
+})
+
+notify.send("插件内部事件", vim.log.levels.INFO)
+local token = notify.fidget.send("构建", "开始")
+notify.fidget.update(token, "编译中", { percentage = 40 })
+notify.fidget.finish(token, "完成")
+```
+
+订阅 API：
 
 ```lua
 local unsubscribe = notify.subscribe(

@@ -8,6 +8,7 @@ local render_timer
 local spinner_timer
 local unsubscribe
 local current_opts = {}
+local user_client = { id = "user", name = "fidget" }
 local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
 local function stop_timer(timer)
@@ -141,6 +142,7 @@ local function render(opts)
 end
 
 function M.setup(opts, bus)
+	bus = bus or require("notify.bus")
 	M.restore()
 	opts = opts == true and {} or (opts or {})
 	current_opts = opts
@@ -155,10 +157,11 @@ function M.setup(opts, bus)
 			if message.tag == "lsp.progress.end" or value.kind == "end" then
 				progress[key] = nil
 			else
+				local previous = progress[key] or {}
 				progress[key] = {
-					title = value.title or "Working",
-					message = value.message,
-					percentage = value.percentage,
+					title = value.title or previous.title or "Working",
+					message = value.message or previous.message,
+					percentage = value.percentage or previous.percentage,
 					client = data.client and data.client.name,
 				}
 			end
@@ -167,7 +170,8 @@ function M.setup(opts, bus)
 				render_timer = nil
 				render(current_opts)
 			end, current_opts.throttle or 80)
-		end
+		end,
+		"fidget"
 	)
 	return true
 end
@@ -184,6 +188,38 @@ function M.restore()
 		unsubscribe = nil
 	end
 	clear()
+end
+
+local function emit(token, kind, title, message, opts)
+	opts = opts or {}
+	local Bus = require("notify.bus")
+	local value = { kind = kind, title = title, message = message, percentage = opts.percentage }
+	Bus.emit(
+		"lsp.progress." .. (kind == "begin" and "start" or kind == "end" and "end" or "update"),
+		opts.level or vim.log.levels.INFO,
+		message or title or "",
+		{
+			client = user_client,
+			token = token,
+			value = value,
+		},
+		{ source = "fidget.send" }
+	)
+end
+
+function M.send(title, message, opts)
+	local Bus = require("notify.bus")
+	local token = (opts and opts.token) or ("fidget:" .. tostring(Bus.next_id + 1))
+	emit(token, "begin", title, message, opts)
+	return token
+end
+
+function M.update(token, message, opts)
+	emit(token, "report", nil, message, opts)
+end
+
+function M.finish(token, message, opts)
+	emit(token, "end", nil, message, opts)
 end
 
 M.dismiss = M.restore

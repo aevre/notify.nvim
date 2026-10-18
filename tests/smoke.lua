@@ -133,6 +133,22 @@ remove_failure_subscriber()
 vim.api.nvim_echo = original_echo
 check(failure_reported, "subscriber failure reporting")
 
+notify.setup({
+	animate = false,
+	routes = {
+		{ match = { exact = { "notify" }, source = "notify.send" }, to = "custom" },
+		{ match = { exact = { "route.test" } }, to = "custom" },
+	},
+})
+local routed = 0
+local remove_routed = notify.subscribe("notify-test-route", { exact = { "notify", "route.test" } }, nil, function()
+	routed = routed + 1
+end, "custom")
+notify.bus.emit("notify", vim.log.levels.INFO, "vim source", {}, { source = "vim.notify" })
+notify.send("direct api", vim.log.levels.INFO, { timeout = false })
+notify.emit("route.test", vim.log.levels.INFO, "custom route")
+check(routed == 2, "source and tag routing")
+remove_routed()
 notify.setup({ animate = false, lsp_progress = true })
 check(autocmd_count() > 0, "lsp progress setup")
 local progress_events = 0
