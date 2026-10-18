@@ -60,11 +60,14 @@ require("notify").setup({
 | `border` | `"rounded"` | 浮动窗口边框样式。 |
 | `top_down` | `true` | 为 true 时从顶部开始堆叠通知。 |
 | `max_history` | `200` | 历史记录保留数量。 |
+| `max_queue` | `5` | 同时显示的通知窗口上限；后续通知会等待已有通知到期或关闭。 |
 | `animate` | `true` | 使用 animate.nvim 处理堆叠和滑入滑出动画。 |
 | `routes` | `nil` | 有序的 bus 路由规则列表；省略时使用内置的 notify/fidget 默认路由。 |
-| `lsp_progress` | `false` | 可选地将 Neovim `LspProgress` 事件发布到 `fidget` bus 后端。 |
+| `lsp_progress` | `false` | 启用独立 LSP producer，将 Neovim `LspProgress` 事件直接交给 `notify.fidget.progress()`。 |
 
-默认布局参考 nvim-notify/Snacks 的 compact 样式：每条通知都有按严重级别着色的顶部标题、分割线和高亮正文，并显示在带边框的窗口中。通知堆叠在右上角，通过 animate.nvim 从右侧滑入；宽度和高度支持编辑器尺寸比例。LSP 进度由独立的 `notify.fidget` bus 后端处理，只消费 `lsp.progress.*` 事件，在尽可能全宽的右下角无边框浮窗中右对齐显示单行 spinner、任务、消息和百分比高亮，并且不进入通知历史。
+Fidget 后端可通过 `fidget = { max_queue = 5 }` 配置。每个并发进度任务都会使用独立浮窗；新任务从底部加入，并通过与通知相同的 animate.nvim 动画将旧任务向上顶。`max_queue` 限制可见任务浮窗数量；多出的任务按到达顺序等待已有任务结束。
+
+默认布局参考 nvim-notify/Snacks 的 compact 样式：每条通知都有按严重级别着色的顶部标题、分割线和高亮正文，并显示在带边框的窗口中。通知堆叠在右上角，通过 animate.nvim 从右侧滑入；宽度和高度支持编辑器尺寸比例。Fidget 是通用消息后端；独立的 LSP progress producer 将进度事件直接交给 Fidget 渲染，每个进度任务使用独立的右下角全宽无边框浮窗；新任务加入底部并通过 animate.nvim 将旧任务向上顶，Fidget 消息和进度均不进入通知历史。
 
 单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。`render` 回调兼容 Noice 的四参数回调格式，并收到带有 `render()`、`minimum_width()`、`max_width()` 和 `max_height()` 辅助函数的配置对象。设置 `timeout = false` 可以让通知持续显示。重复使用 `id`，或传入 `replace = record`，可以更新已有通知。
 
@@ -84,7 +87,7 @@ notify.restore()
 
 事件总线可供集成使用。订阅时可将后端名作为第五个参数；配置路由后，只有命中的命名后端会收到事件。按顺序匹配，第一条命中规则生效。`match` 支持 `exact`、`prefix`、Lua 模式 `fuzzy`，以及可选的 `source` 来源过滤；`to` 可指定单个后端名或后端列表。使用自定义路由时，未命中的消息不会发送到命名后端；未命名的订阅者仍可收到事件。
 
-`vim.notify` 使用 `notify` 标签和 `vim.notify` 来源；`notify.send()` 使用相同标签、来源为 `notify.send`，因此可以把其他插件的通知和显式调用区分路由。`notify.fidget.send()` 启动用户进度任务并返回 token，之后使用 `notify.fidget.update(token, message, opts)` 更新，使用 `notify.fidget.finish(token, message, opts)` 结束。
+`vim.notify` 使用 `notify` 标签和 `vim.notify` 来源；`notify.send()` 使用相同标签、来源为 `notify.send`，因此可以把其他插件的通知和显式调用区分路由。`notify.fidget.notify(message, opts)` 直接显示 Fidget 消息。进度使用 `notify.fidget.progress(message, opts)`，参数包括 `client_id`、`token` 和可选的 `kind`、`title`、`percentage`、`icon`；`notify.fidget.send()` 启动用户任务并返回 token，再用 `update()` 和 `finish()` 更新或结束。
 
 ```lua
 local notify = require("notify")

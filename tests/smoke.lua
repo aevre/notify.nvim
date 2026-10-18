@@ -77,6 +77,18 @@ vim.wait(250, function()
 	return expiring.closed
 end, 10)
 check(expiring.closed, "notification timeout")
+notify.dismiss()
+notify.setup({ animate = false, max_queue = 1 })
+local queued_first = vim.notify("queue first", vim.log.levels.INFO, { timeout = 40 })
+local queued_second = vim.notify("queue second", vim.log.levels.INFO, { timeout = false })
+check(
+	queued_first.win and not queued_first.closed and queued_second.queued and not queued_second.win,
+	"notification waits in bounded queue"
+)
+vim.wait(150, function()
+	return queued_second.win ~= nil
+end, 10)
+check(queued_second.win and not queued_second.closed, "queued notification appears after expiration")
 
 local persistent = vim.notify("persistent", vim.log.levels.INFO, { timeout = false })
 notify.dismiss()
@@ -151,22 +163,17 @@ check(routed == 2, "source and tag routing")
 remove_routed()
 notify.setup({ animate = false, lsp_progress = true })
 check(autocmd_count() > 0, "lsp progress setup")
-local progress_events = 0
-local remove_progress = notify.subscribe(
-	"notify-test-progress",
-	{ prefix = { "lsp.progress." } },
-	vim.log.levels.TRACE,
-	function()
-		progress_events = progress_events + 1
-	end
-)
-notify.bus.emit("lsp.progress.update", vim.log.levels.INFO, "progress", {})
-check(progress_events == 1, "lsp progress bus event")
-notify.bus.emit("lsp.progress.update", vim.log.levels.INFO, "indexing", {
-	client = { id = 7, name = "test" },
+local fidget = require("notify.fidget")
+fidget.notify("Build finished", { title = "Build", icon = "✓", timeout = 100 })
+local token = fidget.progress("building", {
+	client_id = 7,
 	token = "single-line",
-	value = { title = "Index", message = "building", percentage = 42 },
+	kind = "begin",
+	title = "Index",
+	percentage = 42,
+	icon = "LSP",
 })
+check(token == "7:single-line", "fidget progress API identifies task")
 local fidget_win
 vim.wait(250, function()
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -177,21 +184,30 @@ vim.wait(250, function()
 	end
 	return false
 end, 10)
-check(fidget_win and vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(fidget_win)) == 1, "fidget renders one line")
-local fidget_line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(fidget_win), 0, 1, false)[1]
-check(
-	fidget_line:match("^%s+⠋")
-		or fidget_line:match("^%s+⠙")
-		or fidget_line:match("^%s+⠹")
-		or fidget_line:match("^%s+⠸")
-		or fidget_line:match("^%s+⠼")
-		or fidget_line:match("^%s+⠴")
-		or fidget_line:match("^%s+⠦")
-		or fidget_line:match("^%s+⠧")
-		or fidget_line:match("^%s+⠇")
-		or fidget_line:match("^%s+⠏"),
-	"fidget content right aligned"
-)
+fidget.progress("working", {
+	client_id = 8,
+	token = "stacked",
+	kind = "begin",
+	title = "Other",
+	percentage = 10,
+})
+local fidget_wins = {}
+vim.wait(150, function()
+	fidget_wins = {}
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		if vim.wo[win].winhighlight:find("NotifyProgress", 1, true) then
+			fidget_wins[#fidget_wins + 1] = win
+		end
+	end
+	return #fidget_wins == 2
+end, 10)
+check(#fidget_wins == 2, "fidget stacks concurrent task windows")
+local has_event_icon = false
+for _, win in ipairs(fidget_wins) do
+	local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1]
+	has_event_icon = has_event_icon or line:find("LSP  Index", 1, true) ~= nil
+end
+check(has_event_icon, "fidget uses event icon")
 local history_before_progress = #notify.history({ include_hidden = true })
 local fidget = require("notify.fidget")
 check(fidget and type(fidget.dismiss) == "function", "separate fidget backend")
@@ -206,7 +222,6 @@ vim.api.nvim_exec_autocmds("LspProgress", {
 		params = { token = "smoke", value = { kind = "begin", title = "Index", percentage = 10 } },
 	},
 })
-check(notify.bus.dispatching == false, "fidget backend consumes progress bus event")
 vim.wait(100, function()
 	return true
 end, 10)
@@ -214,7 +229,7 @@ vim.api.nvim_exec_autocmds("LspProgress", {
 	data = { client_id = client.id, params = { token = "smoke", value = { kind = "end" } } },
 })
 vim.lsp.get_client_by_id = original_get_client
-remove_progress()
+fidget.dismiss()
 check(#notify.history({ include_hidden = true }) == history_before_progress, "progress outside history")
 notify.setup({ animate = false, lsp_progress = false })
 check(autocmd_count() == 0, "lsp progress cleanup")

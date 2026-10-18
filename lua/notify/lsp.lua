@@ -1,8 +1,9 @@
 local M = {}
 local group_name = "notify_lsp_progress"
 
-function M.setup(bus)
+function M.setup(fidget)
 	M.restore()
+	fidget = fidget or require("notify.fidget")
 	local group = vim.api.nvim_create_augroup(group_name, { clear = true })
 	vim.api.nvim_create_autocmd("LspProgress", {
 		group = group,
@@ -14,11 +15,13 @@ function M.setup(bus)
 			if not client or type(value) ~= "table" then
 				return
 			end
-			local kind = value.kind == "begin" and "start" or value.kind == "end" and "end" or "update"
-			bus.emit("lsp.progress." .. kind, vim.log.levels.INFO, value.message or value.title or "", {
-				client = client,
+			fidget.progress(value.message or value.title or "", {
+				client_id = client.id,
 				token = params.token,
-				value = value,
+				kind = value.kind,
+				title = value.title,
+				percentage = value.percentage,
+				icon = value.icon,
 			})
 		end,
 	})

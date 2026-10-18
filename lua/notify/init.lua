@@ -1,4 +1,4 @@
-local M = { _history = {}, _notifications = {}, _ids = {}, _next_id = 0, _bus_records = {} }
+local M = { _history = {}, _notifications = {}, _ids = {}, _next_id = 0, _bus_records = {}, _queue = {} }
 local Bus = require("notify.bus")
 local Fidget = require("notify.fidget")
 local LspProgress = require("notify.lsp")
@@ -22,6 +22,7 @@ local defaults = {
 	border = "rounded",
 	top_down = true,
 	max_history = 200,
+	max_queue = 5,
 	animate = true,
 	animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
 	icons = {},
@@ -295,8 +296,40 @@ local function render(record)
 	end
 end
 
-local function close(record, animate)
+local close
+
+local function show_queued()
+	local visible_count = #visible()
+	while visible_count < math.max(1, config.max_queue) and #M._queue > 0 do
+		local record = table.remove(M._queue, 1)
+		if not record.closed then
+			record.queued = false
+			render(record)
+			if record.custom_render then
+				pcall(record.custom_render, record.win.buf, record, {}, config)
+			end
+			record.timer = record.timeout ~= false
+					and record.timeout ~= 0
+					and vim.defer_fn(function()
+						record.timer = nil
+						close(record, true)
+					end, record.timeout or config.timeout)
+				or nil
+			visible_count = visible_count + 1
+		end
+	end
+end
+
+close = function(record, animate)
 	if record.closed then
+		return
+	end
+	if record.queued then
+		record.closed = true
+		M._notifications[record.id] = nil
+		if record.user_id ~= nil and M._ids[record.user_id] == record.id then
+			M._ids[record.user_id] = nil
+		end
 		return
 	end
 	if type(record.keep) == "function" and record.keep() then
@@ -332,6 +365,7 @@ local function close(record, animate)
 		M._ids[record.user_id] = nil
 	end
 	layout()
+	show_queued()
 end
 
 local function normalize_id(ref)
@@ -384,6 +418,9 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		old.closed = false
 		old.created = now()
 		old.on_open, old.on_close = opts.on_open or old.on_open, opts.on_close or old.on_close
+		if old.queued then
+			return old
+		end
 		render(old)
 		if opts.render then
 			pcall(opts.render, old.win.buf, old, {}, config)
@@ -419,6 +456,7 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		on_open = opts.on_open,
 		on_close = opts.on_close,
 		hide_from_history = opts.hide_from_history,
+		custom_render = opts.render,
 		created = now(),
 		closed = false,
 	}
@@ -430,17 +468,23 @@ local function notify_impl(message, level, opts, source, reserved_id)
 	if resolved_id ~= nil then
 		M._ids[resolved_id] = id
 	end
-	render(record)
-	if opts.render then
-		pcall(opts.render, record.win.buf, record, {}, config)
+	local queued = #visible() >= math.max(1, config.max_queue)
+	if queued then
+		record.queued = true
+		M._queue[#M._queue + 1] = record
+	else
+		render(record)
+		if opts.render then
+			pcall(opts.render, record.win.buf, record, {}, config)
+		end
+		record.timer = opts.timeout ~= false
+				and opts.timeout ~= 0
+				and vim.defer_fn(function()
+					record.timer = nil
+					close(record, true)
+				end, opts.timeout or config.timeout)
+			or nil
 	end
-	record.timer = opts.timeout ~= false
-			and opts.timeout ~= 0
-			and vim.defer_fn(function()
-				record.timer = nil
-				close(record, true)
-			end, opts.timeout or config.timeout)
-		or nil
 	return record
 end
 
@@ -538,9 +582,9 @@ function M.setup(opts)
 	else
 		vim.notify = notify
 	end
-	Fidget.setup(config.fidget, Bus)
+	Fidget.setup(config.fidget, Animate)
 	if config.lsp_progress then
-		LspProgress.setup(Bus)
+		LspProgress.setup(Fidget)
 	end
 	return M
 end
@@ -594,8 +638,9 @@ function M.dismiss(opts)
 end
 
 function M.setup_progress(opts)
-	LspProgress.setup(Bus)
-	return Fidget.setup(opts, Bus)
+	Fidget.setup(opts, Animate)
+	LspProgress.setup(Fidget)
+	return true
 end
 
 function M.send(message, level, opts)

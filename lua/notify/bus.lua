@@ -49,7 +49,6 @@ local function routed_to(subscriber, message)
 			{ match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
 			{ match = { exact = { "notify" }, source = "notify.send" }, to = "notify" },
 			{ match = { prefix = { "msg.show." } }, to = "notify" },
-			{ match = { prefix = { "lsp.progress." } }, to = "fidget" },
 		}
 	for _, route in ipairs(routes) do
 		local selector = route.match or {}

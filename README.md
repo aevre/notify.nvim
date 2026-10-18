@@ -60,11 +60,14 @@ require("notify").setup({
 | `border` | `"rounded"` | Floating window border style. |
 | `top_down` | `true` | Stack notifications from the top when true. |
 | `max_history` | `200` | Number of records retained in history. |
+| `max_queue` | `5` | Maximum visible notification windows; later notifications wait until a visible one expires or closes. |
 | `animate` | `true` | Use animate.nvim for stacking and slide transitions. |
 | `routes` | `nil` | Ordered list of bus routing rules. When omitted, the built-in `notify` and `fidget` routes are used. |
-| `lsp_progress` | `false` | Optionally publish Neovim `LspProgress` events to the `fidget` bus backend. |
+| `lsp_progress` | `false` | Let the LSP producer send Neovim `LspProgress` events directly to `notify.fidget.progress()`. |
 
-The default layout follows the compact nvim-notify/Snacks style: each notification has a severity-colored title row, a separator, and highlighted message content inside a bordered window. Notifications stack at the top-right and slide in from the right with animate.nvim; width and height may be fractional editor limits. LSP progress is a separate `notify.fidget` bus backend: it consumes only `lsp.progress.*`, renders a full-width borderless bottom-right float with right-aligned, single-line spinner, task, message, and percentage highlights, and is not added to notification history.
+The Fidget backend accepts `fidget = { max_queue = 5 }` in setup options. Each concurrent progress task gets a separate floating window. New tasks enter at the bottom and push older tasks upward using the same animate.nvim transitions as notifications. `max_queue` limits visible task windows. Additional tasks wait in arrival order and appear as visible tasks finish. Fidget is a general-purpose message backend; the separate LSP progress producer sends progress updates directly to it.
+
+The default layout follows the compact nvim-notify/Snacks style: each notification has a severity-colored title row, a separator, and highlighted message content inside a bordered window. Notifications stack at the top-right and slide in from the right with animate.nvim; width and height may be fractional editor limits. LSP progress is produced separately and sent directly to Fidget, which renders each task in its own full-width borderless bottom-right float; new tasks push older tasks upward with animate.nvim transitions. Fidget messages and progress are not added to notification history.
 
 Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. The `render` callback follows Noice's four-argument callback contract and receives a config with `render()`, `minimum_width()`, `max_width()`, and `max_height()` helpers. Set `timeout = false` for a persistent notification. Reuse `id` or pass `replace = record` to update an existing notification.
 
@@ -84,7 +87,7 @@ The module is callable and is equivalent to `notify.notify(message, level, opts)
 
 The event bus is available for integrations. Subscribers can optionally register a backend name as the fifth argument; configured routes then select which named backend receives matching events. The first matching route wins. `match` accepts the same `exact`, `prefix`, and Lua-pattern `fuzzy` selectors as subscriptions, plus an optional `source` filter. `to` can be one backend name or a list. With custom routes, unmatched messages are not sent to named backends; unnamed subscribers still receive events.
 
-`vim.notify` emits the `notify` tag with source `vim.notify`; `notify.send()` emits the same tag with source `notify.send`. This lets routes distinguish messages from other plugins versus calls made through this plugin's API. `notify.fidget.send()` starts a user-created progress item and returns its token; use `notify.fidget.update(token, message, opts)` and `notify.fidget.finish(token, message, opts)` to update and finish it.
+`vim.notify` emits the `notify` tag with source `vim.notify`; `notify.send()` emits the same tag with source `notify.send`. This lets routes distinguish messages from other plugins versus calls made through this plugin's API. `notify.fidget.notify(message, opts)` displays a Fidget message directly. For progress, use `notify.fidget.progress(message, opts)` with `client_id`, `token`, and optional `kind`, `title`, `percentage`, and `icon`; `notify.fidget.send()` starts a user task and returns its token, then `notify.fidget.update()` and `notify.fidget.finish()` update or finish it.
 
 ```lua
 local notify = require("notify")
