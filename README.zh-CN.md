@@ -39,6 +39,7 @@ require("notify").setup({
   max_height = 0.6,
   border = "rounded",
   gap = 0,
+  margin = { top = 1, right = 1, bottom = 0 },
   animate = true,
   lsp_progress = false,
 })
@@ -51,6 +52,7 @@ require("notify").setup({
 | `min_width` | `40` | 通知最小宽度。 |
 | `max_height` | `0.6` | 通知最大高度；小于 1 的值表示编辑器高度的比例。 |
 | `gap` | `0` | 堆叠通知之间的空行数。 |
+| `margin` | `{ top = 1, right = 1, bottom = 0 }` | 边缘间距；默认顶部空出一行，避免通知覆盖 tabline。 |
 | `margin` | `{ top = 0, right = 1, bottom = 0 }` | 与编辑器边缘的间距。 |
 | `padding` | `1` | 窗口内部边距。 |
 | `border` | `"rounded"` | 浮动窗口边框样式。 |

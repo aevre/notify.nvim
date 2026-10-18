@@ -14,7 +14,7 @@ local defaults = {
 	max_width = 0.4,
 	min_width = 40,
 	max_height = 0.6,
-	margin = { top = 0, right = 1, bottom = 0 },
+	margin = { top = 1, right = 1, bottom = 0 },
 	padding = 1,
 	gap = 0,
 	border = "rounded",

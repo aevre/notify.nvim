@@ -39,6 +39,7 @@ require("notify").setup({
   max_height = 0.6,
   border = "rounded",
   gap = 0,
+  margin = { top = 1, right = 1, bottom = 0 },
   animate = true,
   lsp_progress = false,
 })
@@ -51,6 +52,7 @@ require("notify").setup({
 | `min_width` | `40` | Minimum notification width. |
 | `max_height` | `0.6` | Maximum notification height; values below 1 are a fraction of the editor height. |
 | `gap` | `0` | Empty rows between stacked notifications. |
+| `margin` | `{ top = 1, right = 1, bottom = 0 }` | Edge margin; the default top row keeps notifications below the tabline. |
 | `margin` | `{ top = 0, right = 1, bottom = 0 }` | Editor edge margins. |
 | `padding` | `1` | Inner window padding. |
 | `border` | `"rounded"` | Floating window border style. |
