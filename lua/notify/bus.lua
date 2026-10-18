@@ -13,9 +13,7 @@
 
 local M = { subscribers = {}, queue = {}, dispatching = false, next_id = 0 }
 
-local function now()
-	return vim.uv and vim.uv.now() or vim.loop.now()
-end
+local util = require("notify.util")
 
 local function level_value(level)
 	if type(level) == "number" then
@@ -152,7 +150,7 @@ function M.emit(tag, level, content, data, meta)
 		level = level_value(level),
 		content = content,
 		data = data,
-		timestamp = now(),
+		timestamp = util.now(),
 		meta = meta or {},
 	}
 	local function enqueue()
