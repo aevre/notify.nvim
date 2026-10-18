@@ -71,13 +71,13 @@ local spinner_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧",
 local function spinner_frames_for(value)
 	if type(value) == "table" and #value > 0 then
 		for _, frame in ipairs(value) do
-			if type(frame) ~= "string" then
+			if type(frame) ~= "string" or frame == "" then
 				return spinner_frames
 			end
 		end
 		return value
 	end
-	return spinner_frames_for(current_opts.spinner_frames or spinner_frames)
+	return spinner_frames
 end
 
 ---@param value? any
