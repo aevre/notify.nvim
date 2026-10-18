@@ -72,9 +72,9 @@ local levels = require("notify.levels")
 local progress = {}
 ---@type notify.FidgetConfig
 local current_opts = {}
----@type integer|uv_timer_t|nil
+---@type integer|nil
 local render_timer, spinner_timer
----@type fun(from: number, to: number, callback: fun(value: number), opts?: table)|nil
+---@type fun(from: number, to: number, callback: fun(value: number, ctx?: animate.Ctx), opts?: table)|nil
 local Animate
 local next_message_id = 0
 local history = {}
@@ -104,15 +104,10 @@ local function spinner(value, interval)
 	return frames[math.floor((vim.uv or vim.loop).hrtime() / (interval * 1000000)) % #frames + 1]
 end
 
----@param timer? integer|uv_timer_t
+---@param timer? integer
 local function stop_timer(timer)
 	if timer then
-		if type(timer) == "number" then
-			pcall(vim.fn.timer_stop, timer)
-		else
-			pcall(timer.stop, timer)
-			pcall(timer.close, timer)
-		end
+		pcall(vim.fn.timer_stop, timer)
 	end
 end
 
@@ -128,6 +123,19 @@ local function tasks()
 	return result
 end
 
+---@param buf integer
+---@param ns integer
+---@param group string
+---@param row integer
+---@param start_col integer
+---@param end_col integer
+local function highlight(buf, ns, group, row, start_col, end_col)
+	vim.api.nvim_buf_set_extmark(buf, ns, row, start_col, {
+		end_col = end_col,
+		hl_group = group,
+	})
+end
+
 local function layout()
 	local all_tasks = tasks()
 	local list = {}
@@ -138,6 +146,7 @@ local function layout()
 	local opts = current_opts
 	local margin = opts.margin_right or 1
 	local width = math.max(1, vim.o.columns - (opts.margin_left or 1) - margin)
+	---@cast width integer
 	local bottom = vim.o.lines - vim.o.cmdheight - (opts.margin_bottom or 1)
 	for index, item in ipairs(list) do
 		local task, row = item.task, bottom - (#list - index + 1)
@@ -200,7 +209,7 @@ local function layout()
 		vim.api.nvim_buf_clear_namespace(task.win.buf, ns, 0, -1)
 		local icon_start = #padding
 		if icon ~= "" then
-			vim.api.nvim_buf_add_highlight(
+			highlight(
 				task.win.buf,
 				ns,
 				task.spinner and "NotifyProgressSpinner" or "NotifyFidgetLevel",
@@ -211,20 +220,21 @@ local function layout()
 		end
 		local tag_start = icon_start + #icon + (icon ~= "" and 2 or 0)
 		if tag ~= "" then
-			vim.api.nvim_buf_add_highlight(task.win.buf, ns, "NotifyFidgetLevel", 0, tag_start, tag_start + #tag - 2)
+			highlight(task.win.buf, ns, "NotifyFidgetLevel", 0, tag_start, tag_start + #tag - 2)
 		end
 		local task_start = tag_start + #tag
 		local title = tostring(task.title or "Working")
-		vim.api.nvim_buf_add_highlight(task.win.buf, ns, "NotifyProgressTask", 0, task_start, -1)
-		vim.api.nvim_buf_add_highlight(task.win.buf, ns, "NotifyProgressTitle", 0, task_start, task_start + #title)
+		highlight(task.win.buf, ns, "NotifyProgressTask", 0, task_start, #line)
+		highlight(task.win.buf, ns, "NotifyProgressTitle", 0, task_start, task_start + #title)
 		if task.message and task.message ~= "" then
-			vim.api.nvim_buf_add_highlight(task.win.buf, ns, "NotifyProgressMessage", 0, task_start + #title + 2, -1)
+			highlight(task.win.buf, ns, "NotifyProgressMessage", 0, task_start + #title + 2, #line)
 		end
 		local start, finish = line:find(" %d+%%", task_start)
-		if start then
-			vim.api.nvim_buf_add_highlight(task.win.buf, ns, "NotifyProgressPercentage", 0, start - 1, finish)
+		if start and finish then
+			highlight(task.win.buf, ns, "NotifyProgressPercentage", 0, start - 1, finish)
 		end
-		local old_row = task.win.opts.row or row
+		local old_row = task.win.opts.row
+		old_row = type(old_row) == "number" and old_row or row
 		task.win.opts.width, task.win.opts.col, task.win.opts.zindex = width, opts.margin_left or 1, 80 + index
 		if opts.animate ~= false and Animate and old_row ~= row then
 			Animate(old_row, row, function(value)
@@ -288,18 +298,22 @@ local function render()
 end
 
 ---@param opts? boolean|notify.FidgetConfig
----@param animate? fun(from: number, to: number, callback: fun(value: number), opts?: table)
+---@param animate? fun(from: number, to: number, callback: fun(value: number, ctx?: animate.Ctx), opts?: table)
 function M.setup(opts, animate)
 	M.restore()
-	current_opts = opts == true and {} or (opts or {})
+	if type(opts) == "table" then
+		current_opts = opts
+	else
+		current_opts = {}
+	end
 	Animate = animate or Animate
 	return true
 end
 
 ---@param opts? boolean|notify.FidgetConfig
 function M.resize(opts)
-	if opts then
-		current_opts = opts == true and {} or opts
+	if type(opts) == "table" then
+		current_opts = opts
 	end
 	if next(progress) then
 		render()
