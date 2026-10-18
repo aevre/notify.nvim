@@ -38,6 +38,7 @@ local first = vim.notify("first message", vim.log.levels.INFO, {
 check(first.id and first.level == "INFO", "notification record shape")
 check(first.message[1] == "first message", "notification message")
 check(first.title[1] == "Smoke", "notification title")
+check(first.win and not first.win.backdrop, "notifications do not create a backdrop")
 check(notify.history()[1] == first, "notification history")
 local visual = vim.notify("**body line 1**\nbody line 2", vim.log.levels.ERROR, { timeout = false })
 local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)

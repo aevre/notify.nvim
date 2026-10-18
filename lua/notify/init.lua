@@ -417,6 +417,7 @@ local function render(record)
 			width = initial_width,
 			height = height,
 			border = config.border,
+			backdrop = false,
 			zindex = 80,
 			enter = false,
 			focusable = false,
