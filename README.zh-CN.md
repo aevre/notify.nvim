@@ -44,6 +44,19 @@ require("notify").setup({
   style = "default",
   stages = "fade_in_slide_out",
   animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
+  max_history = 200,
+  max_queue = 5,
+  top_down = true,
+  icons = { INFO = "ℹ", WARN = "⚠" },
+  lsp_progress = true,
+  fidget = {
+    max_queue = 5,
+    margin_left = 1,
+    margin_right = 1,
+    margin_bottom = 1,
+    timeout = 3000,
+    spinner_interval = 200,
+  },
   routes = {
     { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
     { match = { exact = { "notify" }, source = "notify.send" }, to = "fidget" },
@@ -70,17 +83,59 @@ require("notify").setup({
 | `animation` | `{ duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 }` | 传给 animate.nvim 的时长、缓动和帧率。`duration` 可以是数字，也可以是 `{ step, total }` 表。 |
 | `routes` | `nil` | 按顺序匹配的 bus 路由。没有自定义路由时，内置路由将 `vim.notify`、`notify.send()` 和 `msg.show.*` 发送到通知后端。 |
 | `fidget` | `nil` | Fidget 配置，见下方的 Fidget 小节，包括任务容量、边距、超时和 spinner。 |
+| `icons` | `{}` | 可选的级别图标覆盖表，键为 `TRACE`、`DEBUG`、`INFO`、`WARN` 或 `ERROR`；未指定的级别使用内置图标。 |
 | `lsp_progress` | `false` | 订阅 Neovim `LspProgress` 事件，并通过 `notify.fidget.progress()` 渲染。 |
+| `notify` | `true` | 将本插件安装为 `vim.notify` 的处理函数。 |
+| `minimum_width` | 根据 `min_width` 计算 | 可选函数，返回自定义最小渲染宽度；通常无需设置。 |
+| `render` | 内置 renderer | 可选的全局自定义 buffer renderer 回调；单条通知的 `render` 可覆盖它。 |
 
-Fidget 后端可通过 `fidget = { max_queue = 5, margin_bottom = 1, margin_right = 1, timeout = 3000, spinner_interval = 200, spinner_frames = { "⠁", "⠂", "⠄", "⠐", "⠠", "⠰" } }` 配置。`spinner_interval` 是每帧的毫秒数，最小为 50ms。进度任务可通过 `spinner_interval`、`spinner_frames` 或 `spinner = { ... }` 覆盖默认速度和帧列表；`spinner = true` 使用配置中的默认帧。帧列表必须非空且每一项都是字符串，否则会回退到默认帧。Fidget 消息支持 `timeout`，也可以设置 `title`、`level` 和 `icon`；`level` 支持 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR` 和 `none`。每个并发任务都会使用独立的透明无边框浮窗；新任务从底部加入，并通过与通知相同的 animate.nvim 动画将旧任务向上顶。`max_queue` 限制可见任务浮窗数量；多出的任务按到达顺序等待已有任务结束。Fidget 是通用消息后端；独立的 LSP progress producer 将进度事件直接交给它。LSP 进度会启用 spinner，并使用自己指定的六帧 spinner 列表。
+### Fidget
 
-`default` renderer 显示图标和标题、铺满通知内容宽度的分割线以及正文。`wrapped-default` 保留相同布局，并将过长正文折行到配置宽度内。`minimal` 显示图标和第一行正文；`simple` 将图标、标题和第一行正文合并；`compact` 将标题置于分割线上方并显示正文；`wrapped-compact` 只显示折行后的正文，不显示标题行。所有 renderer 都通过 `style` 选择；单条通知的 `render` 仍用于自定义 buffer 内容。
+通过顶层 `fidget` 选项配置 Fidget：
 
-`stages` 选择过渡预设，`animation` 将时长和缓动参数传给 animate.nvim。使用 `animate = false` 或 `stages = "static"` 可关闭过渡动画。小于 `1` 的 `max_width`/`max_height` 会按当前编辑器尺寸计算。通知默认堆叠在右上角，Fidget 则使用右下角的独立浮窗。Fidget 是通用消息后端；独立的 LSP progress producer 将进度事件直接交给 Fidget 渲染，每个进度任务使用独立的右下角全宽无边框浮窗；新任务加入底部并通过 animate.nvim 将旧任务向上顶，Fidget 消息和进度均不进入通知历史。
+```lua
+fidget = {
+  max_queue = 5,
+  margin_left = 1,
+  margin_right = 1,
+  margin_bottom = 1,
+  timeout = 3000,
+  spinner_interval = 200,
+  spinner_frames = { "⠁", "⠂", "⠄", "⠐", "⠠", "⠰" },
+}
+```
 
-单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。`id` 用于标识通知；再次使用相同 ID 会替换原记录和窗口。`replace` 可以接收已有 ID 或记录。`keep` 可以是布尔值，也可以是返回布尔值的函数；函数返回 true 时会推迟超时关闭。`hide_from_history` 会将记录从默认历史中隐藏，使用 `history({ include_hidden = true })` 才会包含它。`on_open` 和 `on_close` 会收到窗口 ID 与记录。
+- `spinner_interval` 是每帧的毫秒数，最小为 50ms。
+- 进度任务可以用 `spinner_frames`、`spinner_interval` 或 `spinner = { ... }` 覆盖帧列表和速度；`spinner = true` 使用配置中的默认帧。
+- 帧列表必须非空且每一项都是非空字符串，否则回退到内置帧。
+- Fidget 消息支持 `timeout`、`title`、`level` 和 `icon`。级别为 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR` 或 `none`。
+- 每个任务使用独立的透明无边框浮窗；新任务从底部加入，并通过 animate.nvim 动画将旧任务向上顶。
+- `max_queue` 限制可见任务窗口数量，额外任务按到达顺序等待。
 
-自定义 `render` 回调接收 `(buf, record, highlights, config)` 四个参数，可用于写入自定义 buffer 内容。`config` 提供 `minimum_width()`、`max_width()` 和 `max_height()` 辅助函数。设置 `timeout = false` 可保持通知显示。
+Fidget 是通用消息界面。独立的 LSP progress producer 会直接向它发送更新、启用 spinner 并提供自己的六帧列表。Fidget 消息和进度不会进入通知历史。
+
+### Renderer 与动画
+
+- `default` 显示图标、标题、分割线和正文。
+- `wrapped-default` 保持相同布局，并将过长正文折行。
+- `minimal` 显示图标和第一行正文；`simple` 合并图标、标题和第一行正文。
+- `compact` 将标题置于分割线和正文上方；`wrapped-compact` 显示折行正文但不显示标题行。
+
+使用 `style` 选择内置 renderer。使用 `animate = false` 或 `stages = "static"` 关闭过渡动画。`stages` 选择动画预设，`animation` 将时长和缓动参数传给 animate.nvim。小于 `1` 的 `max_width` 和 `max_height` 会按当前编辑器尺寸计算。
+
+通知默认堆叠在右上角。Fidget 任务使用右下角独立的全宽无边框浮窗，并将旧任务向上顶。Fidget 消息和进度不会进入通知历史。
+
+### 单条通知选项
+
+单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。
+
+- 重用 `id` 会替换已有记录和窗口；`replace` 可以接收已有 ID 或记录。
+- `keep` 可以是布尔值，也可以是返回布尔值、用于推迟关闭的函数。
+- `hide_from_history` 会将记录从默认历史中隐藏，使用 `history({ include_hidden = true })` 才会包含它。
+- `on_open` 和 `on_close` 会收到窗口 ID 与记录。
+- 设置 `timeout = false` 可保持通知显示，直到手动关闭。
+
+自定义 `render` 回调接收 `(buf, record, highlights, config)`，可用于写入自定义 buffer 内容。`config` 提供 `minimum_width()`、`max_width()` 和 `max_height()` 辅助函数。
 
 ## API
 
@@ -94,11 +149,24 @@ notify.clear_history()
 notify.restore()
 ```
 
-模块可以直接调用，等价于 `notify.notify(message, level, opts)`。历史记录包含 `id`、大写的 `level`、`level_name`、`level_value`、`title`、`message` 和 `time`，以及当前生命周期状态。设置 `hide_from_history = true` 的记录默认会被排除；传入 `{ include_hidden = true }` 给 `history()` 可包含这些记录。
+模块可以直接调用，等价于 `notify.notify(message, level, opts)`。历史记录包含 `id`、大写的 `level`、`level_name`、`level_value`、`title`、`message`、`time` 和当前生命周期状态。设置 `hide_from_history = true` 的记录默认会被排除；传入 `{ include_hidden = true }` 给 `history()` 可包含这些记录。
 
-事件总线可供集成使用。订阅时可将后端名作为第五个参数；配置路由后，只有命中的命名订阅者会收到事件。按顺序匹配，第一条命中规则生效。`match` 支持 `exact`、`prefix`、Lua 模式 `fuzzy`，以及可选的 `source` 来源过滤；`to` 可指定单个后端名或后端列表。未配置自定义路由时，`vim.notify`、`notify.send()` 和 `msg.show.*` 事件都会发送到通知后端。Fidget 通过独立 API 提供，而不是作为 bus 订阅者。使用自定义路由时，未命中的消息不会发送到命名订阅者；未命名的订阅者仍可收到事件。
+### 事件总线
 
-`vim.notify` 使用 `notify` 标签和 `vim.notify` 来源；`notify.send()` 使用相同标签、来源为 `notify.send`，因此可以把其他插件的通知和显式调用区分路由。`notify.fidget.notify(message, opts)` 直接显示 Fidget 消息。Fidget 的 `level` 支持 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR` 和 `none`；`none` 不显示级别标签。图标默认对应通知级别，也可通过 `icon` 覆盖。进度使用 `notify.fidget.progress(message, opts)`，参数包括 `client_id`、`token` 和可选的 `kind`、`title`、`percentage`、`level`、`icon`、`spinner`、`spinner_frames` 和 `spinner_interval`。`spinner = true` 使用配置中的帧；`spinner = { "◐", "◓", "◑", "◒" }` 为当前任务指定帧列表。背景透明，级别标签和图标使用对应通知边框高亮。`notify.fidget.send()` 启动用户任务并返回 token，再用 `notify.fidget.update()` 和 `notify.fidget.finish()` 更新或结束。LSP 进度使用 `none` 级别，活动期间启用 spinner，并使用自己指定的六帧 spinner 列表。
+- 订阅时可将后端名作为第五个参数；配置路由后，第一条命中的路由决定哪个命名订阅者接收事件。
+- `match` 支持 `exact`、`prefix`、Lua 模式 `fuzzy` 和可选的 `source` 来源过滤；`to` 可指定单个后端名或后端列表。
+- 未配置自定义路由时，`vim.notify`、`notify.send()` 和 `msg.show.*` 事件发送到通知后端。Fidget 通过独立 API 提供，而不是作为 bus 订阅者。
+- 使用自定义路由时，未命中的消息不会发送到命名订阅者；未命名的订阅者仍可收到事件。
+
+`vim.notify` 使用 `notify` 标签和 `vim.notify` 来源；`notify.send()` 使用相同标签、来源为 `notify.send`。
+
+### Fidget API
+
+`notify.fidget.notify(message, opts)` 直接显示 Fidget 消息。Fidget 的 `level` 支持 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR` 和 `none`；`none` 不显示级别标签。图标默认对应通知级别，也可通过 `icon` 覆盖。
+
+`notify.fidget.progress(message, opts)` 的参数包括 `client_id`、`token` 和可选的 `kind`、`title`、`percentage`、`level`、`icon`、`spinner`、`spinner_frames` 和 `spinner_interval`。`spinner = true` 使用配置中的帧，也可以传入当前任务专用的帧列表，例如 `{ "◐", "◓", "◑", "◒" }`。
+
+`notify.fidget.send()` 启动用户任务并返回 token，再用 `notify.fidget.update()` 和 `notify.fidget.finish()` 更新或结束任务。
 
 ```lua
 local notify = require("notify")

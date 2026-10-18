@@ -44,6 +44,19 @@ require("notify").setup({
   style = "default",
   stages = "fade_in_slide_out",
   animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
+  max_history = 200,
+  max_queue = 5,
+  top_down = true,
+  icons = { INFO = "ℹ", WARN = "⚠" },
+  lsp_progress = true,
+  fidget = {
+    max_queue = 5,
+    margin_left = 1,
+    margin_right = 1,
+    margin_bottom = 1,
+    timeout = 3000,
+    spinner_interval = 200,
+  },
   routes = {
     { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
     { match = { exact = { "notify" }, source = "notify.send" }, to = "fidget" },
@@ -70,17 +83,59 @@ require("notify").setup({
 | `animation` | `{ duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 }` | Options passed to animate.nvim: duration, easing, and frame rate. `duration` can be a number or a `{ step, total }` table. |
 | `routes` | `nil` | Ordered bus routes. Without custom routes, built-in routing sends `vim.notify` and `notify.send()` to notifications and `msg.show.*` to the notification backend. |
 | `fidget` | `nil` | Fidget options. See the Fidget section below for task capacity, margins, timeout, and spinner configuration. |
+| `icons` | `{}` | Optional level-to-icon overrides, keyed by `TRACE`, `DEBUG`, `INFO`, `WARN`, or `ERROR`; unspecified levels use their built-in icons. |
 | `lsp_progress` | `false` | Subscribe to Neovim `LspProgress` events and render them through `notify.fidget.progress()`. |
+| `notify` | `true` | Install this plugin as the handler for `vim.notify`. |
+| `minimum_width` | derived from `min_width` | Optional function returning a custom minimum render width. Usually leave unset. |
+| `render` | built-in renderer | Optional global custom buffer renderer callback; per-notification `render` overrides it. |
 
-The Fidget backend accepts `fidget = { max_queue = 5, margin_bottom = 1, margin_right = 1, timeout = 3000, spinner_interval = 200, spinner_frames = { "⠁", "⠂", "⠄", "⠐", "⠠", "⠰" } }` in setup options. `spinner_interval` is the frame duration in milliseconds, with a minimum of 50ms. Progress tasks may override the interval and frames with `spinner_interval`, `spinner_frames`, or `spinner = { ... }`; `spinner = true` uses the configured frames. A non-empty frame list containing anything other than non-empty strings falls back to the default frames. Fidget messages use `timeout` and may set `title`, `level`, and `icon`; `level` accepts `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, or `none`. Each concurrent task gets a separate transparent, borderless floating window. New tasks enter at the bottom and push older tasks upward using the same animate.nvim transitions as notifications. `max_queue` limits visible task windows. Additional tasks wait in arrival order and appear as visible tasks finish. Fidget is a general-purpose message backend; the separate LSP progress producer sends progress updates directly to it. LSP progress opts into a spinner and currently supplies its own six-frame spinner list.
+### Fidget
 
-The `default` renderer shows an icon and title, a separator spanning the notification content width, and the message. `wrapped-default` keeps that layout and wraps long message lines to fit the configured width. `minimal` shows the icon with the first message line; `simple` puts icon, title, and the first message line together. `compact` centers the title above a separator and message; `wrapped-compact` shows wrapped message lines without a title row. All renderers use `style` as a name, while per-notification `render` remains the callback for custom buffer content.
+Configure Fidget through the top-level `fidget` option:
 
-`stages` chooses the transition preset; `animation` passes timing and easing options to animate.nvim. Use `animate = false` or `stages = "static"` to disable transitions. Fractional `max_width` and `max_height` values scale with the current editor dimensions. Notifications stack at the top-right by default, and the Fidget backend uses separate bottom-right windows. LSP progress is produced separately and sent directly to Fidget, which renders each task in its own full-width borderless bottom-right float; new tasks push older tasks upward with animate.nvim transitions. Fidget messages and progress are not added to notification history.
+```lua
+fidget = {
+  max_queue = 5,
+  margin_left = 1,
+  margin_right = 1,
+  margin_bottom = 1,
+  timeout = 3000,
+  spinner_interval = 200,
+  spinner_frames = { "⠁", "⠂", "⠄", "⠐", "⠠", "⠰" },
+}
+```
 
-Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. `id` identifies a notification; sending another notification with the same ID replaces its record and window. `replace` accepts an existing ID or record. `keep` may be a boolean or a predicate that postpones timeout dismissal while it returns true. `hide_from_history` omits a record from history unless `history({ include_hidden = true })` is used. `on_open` and `on_close` receive the window ID and record.
+- `spinner_interval` is the frame duration in milliseconds and is clamped to at least 50ms.
+- Progress tasks can override the frames and interval with `spinner_frames`, `spinner_interval`, or `spinner = { ... }`. `spinner = true` uses the configured frames.
+- Frame lists must contain non-empty strings; invalid lists fall back to the built-in frames.
+- Fidget messages accept `timeout`, `title`, `level`, and `icon`. Levels are `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, or `none`.
+- Each task gets a separate transparent, borderless window. New tasks enter at the bottom and push older tasks upward with animate.nvim transitions.
+- `max_queue` limits visible task windows. Additional tasks wait in arrival order.
 
-The custom `render` callback receives `(buf, record, highlights, config)` and can write custom buffer content. The config provides `minimum_width()`, `max_width()`, and `max_height()` helpers. Set `timeout = false` for a persistent notification.
+Fidget is a general-purpose message surface. The separate LSP progress producer sends updates directly to it, enables a spinner, and supplies its own six-frame list. Fidget messages and progress are not added to notification history.
+
+### Renderers and animation
+
+- `default` shows an icon, title, separator, and message.
+- `wrapped-default` uses the same layout and wraps long message lines.
+- `minimal` shows the icon and first message line; `simple` combines the icon, title, and first line.
+- `compact` places the title above a separator and message; `wrapped-compact` shows wrapped message lines without a title row.
+
+Use `style` to select a built-in renderer. Use `animate = false` or `stages = "static"` to disable transitions. `stages` selects the transition preset, while `animation` passes timing and easing options to animate.nvim. Fractional `max_width` and `max_height` scale with the current editor dimensions.
+
+Notifications stack at the top-right. Fidget tasks use separate full-width, borderless bottom-right windows and push older tasks upward. Fidget messages and progress are not added to notification history.
+
+### Per-notification options
+
+Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`.
+
+- Reusing an `id` replaces the existing record and window. `replace` accepts an existing ID or record.
+- `keep` may be a boolean or a predicate that postpones timeout dismissal while it returns true.
+- `hide_from_history` omits a record unless `history({ include_hidden = true })` is used.
+- `on_open` and `on_close` receive the window ID and record.
+- Set `timeout = false` to keep a notification open until dismissed.
+
+The custom `render` callback receives `(buf, record, highlights, config)` and can write custom buffer content. The config provides `minimum_width()`, `max_width()`, and `max_height()` helpers.
 
 ## API
 
@@ -94,11 +149,24 @@ notify.clear_history()
 notify.restore()
 ```
 
-The module is callable and is equivalent to `notify.notify(message, level, opts)`. History records expose `id`, uppercase `level`, `level_name`, `level_value`, `title`, `message`, and `time`, along with their current lifecycle state. Records with `hide_from_history = true` are excluded by default; pass `{ include_hidden = true }` to `history()` to include them.
+The module is callable as `notify.notify(message, level, opts)`. History records expose `id`, uppercase `level`, `level_name`, `level_value`, `title`, `message`, `time`, and lifecycle state. Records with `hide_from_history = true` are excluded unless `history({ include_hidden = true })` is used.
 
-The event bus is available for integrations. Subscribers can optionally register a backend name as the fifth argument; configured routes then select which named subscriber receives matching events. The first matching route wins. `match` accepts the same `exact`, `prefix`, and Lua-pattern `fuzzy` selectors as subscriptions, plus an optional `source` filter. `to` can be one backend name or a list. Without custom routes, `vim.notify`, `notify.send()`, and `msg.show.*` events go to the notification backend. Fidget is exposed through its direct API rather than as a bus subscriber. With custom routes, unmatched messages are not sent to named subscribers; unnamed subscribers still receive events.
+### Event bus
 
-`vim.notify` emits the `notify` tag with source `vim.notify`; `notify.send()` emits the same tag with source `notify.send`. This lets routes distinguish messages from other plugins versus calls made through this plugin's API. `notify.fidget.notify(message, opts)` displays a Fidget message directly. Fidget accepts `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, or `none` as `level`; `none` omits the level label. Icons default to the level's notification icon and can be overridden with `icon`. For progress, use `notify.fidget.progress(message, opts)` with `client_id`, `token`, and optional `kind`, `title`, `percentage`, `level`, `icon`, `spinner`, `spinner_frames`, and `spinner_interval`. `spinner = true` uses the configured frames, while `spinner = { "◐", "◓", "◑", "◒" }` supplies task-specific frames. The background is transparent, and level/icon text uses the corresponding notification border highlight. `notify.fidget.send()` starts a user task and returns its token, then `notify.fidget.update()` and `notify.fidget.finish()` update or finish it. LSP progress uses the `none` level, enables its spinner while active, and supplies its own six-frame spinner list.
+- Subscribers may register a backend name as the fifth argument. Configured routes select which named subscriber receives each event; the first matching route wins.
+- `match` supports `exact`, `prefix`, and Lua-pattern `fuzzy` selectors, plus an optional `source` filter. `to` accepts one backend name or a list.
+- Without custom routes, `vim.notify`, `notify.send()`, and `msg.show.*` go to the notification backend. Fidget uses its direct API rather than a bus subscription.
+- With custom routes, unmatched events are not sent to named subscribers. Unnamed subscribers still receive events.
+
+`vim.notify` emits the `notify` tag with source `vim.notify`; `notify.send()` uses the same tag with source `notify.send`.
+
+### Fidget API
+
+`notify.fidget.notify(message, opts)` displays a message directly. Fidget levels are `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, or `none`; `none` hides the level label. Icons default to the level icon and can be overridden with `icon`.
+
+`notify.fidget.progress(message, opts)` accepts `client_id`, `token`, and optional `kind`, `title`, `percentage`, `level`, `icon`, `spinner`, `spinner_frames`, and `spinner_interval`. Use `spinner = true` for configured frames or pass a task-specific list, for example `{ "◐", "◓", "◑", "◒" }`.
+
+`notify.fidget.send()` starts a user task and returns its token. Use `notify.fidget.update()` and `notify.fidget.finish()` to update or finish it.
 
 ```lua
 local notify = require("notify")
@@ -132,7 +200,7 @@ notify.emit("build.done", vim.log.levels.INFO, "Build complete")
 unsubscribe()
 ```
 
-Subscribers can match `exact`, `prefix`, or Lua-pattern `fuzzy` tags. Bus subscriber errors are reported through `nvim_echo` and do not recursively emit another notification.
+Subscribers match tags using `exact`, `prefix`, or Lua-pattern `fuzzy` selectors. Subscriber errors are reported through `nvim_echo` and do not recursively emit another notification.
 
 ## UI ownership
 
