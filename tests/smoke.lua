@@ -37,13 +37,23 @@ check(first.id and first.level == "INFO", "notification record shape")
 check(first.message[1] == "first message", "notification message")
 check(first.title[1] == "Smoke", "notification title")
 check(notify.history()[1] == first, "notification history")
+local noice_render_called = false
+local rendered = vim.notify("Noice render", vim.log.levels.INFO, {
+	timeout = false,
+	render = function(buf, _, _, render_config)
+		noice_render_called = type(render_config.render) == "function"
+		local renderer = render_config.render()
+		renderer(buf, { message = { "Noice render" } })
+	end,
+})
+check(noice_render_called and rendered.win:valid(), "Noice render compatibility")
 
 local replaced = vim.notify("replaced message", vim.log.levels.ERROR, {
 	id = "smoke",
 	timeout = false,
 })
 check(replaced == first and replaced.level == "ERROR", "replacement by string id")
-check(#notify.history() == 1, "replacement should not duplicate history")
+check(#notify.history() == 2, "replacement should not duplicate history")
 
 local replaced_by_record = vim.notify("replaced again", nil, {
 	replace = first,

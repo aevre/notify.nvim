@@ -34,9 +34,11 @@ The plugin calls `setup()` with defaults when it is first required. Configure it
 ```lua
 require("notify").setup({
   timeout = 3000,
-  max_width = 50,
-  max_height = 12,
+  min_width = 40,
+  max_width = 0.4,
+  max_height = 0.6,
   border = "rounded",
+  gap = 0,
   animate = true,
   lsp_progress = false,
 })
@@ -45,9 +47,10 @@ require("notify").setup({
 | Option | Default | Description |
 | --- | --- | --- |
 | `timeout` | `3000` | Display duration in milliseconds. |
-| `max_width` | `50` | Maximum notification width. |
-| `min_width` | `30` | Minimum notification width. |
-| `max_height` | `12` | Maximum notification height. |
+| `max_width` | `0.4` | Maximum notification width; values below 1 are a fraction of the editor width. |
+| `min_width` | `40` | Minimum notification width. |
+| `max_height` | `0.6` | Maximum notification height; values below 1 are a fraction of the editor height. |
+| `gap` | `0` | Empty rows between stacked notifications. |
 | `margin` | `{ top = 0, right = 1, bottom = 0 }` | Editor edge margins. |
 | `padding` | `1` | Inner window padding. |
 | `border` | `"rounded"` | Floating window border style. |
@@ -56,7 +59,9 @@ require("notify").setup({
 | `animate` | `true` | Use animate.nvim for stacking and slide transitions. |
 | `lsp_progress` | `false` | Display `LspProgress` events as a notification. |
 
-Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. Set `timeout = false` for a persistent notification. Reuse `id` or pass `replace = record` to update an existing notification.
+The default layout follows Snacks' compact style: a centered bordered title combines the severity icon and title, windows use a small transparent blend, notifications stack at the top-right, and width/height may be fractional editor limits.
+
+Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. The `render` callback follows Noice's four-argument callback contract and receives a config with `render()`, `minimum_width()`, `max_width()`, and `max_height()` helpers. Set `timeout = false` for a persistent notification. Reuse `id` or pass `replace = record` to update an existing notification.
 
 ## API
 

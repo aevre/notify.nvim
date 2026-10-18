@@ -34,9 +34,11 @@
 ```lua
 require("notify").setup({
   timeout = 3000,
-  max_width = 50,
-  max_height = 12,
+  min_width = 40,
+  max_width = 0.4,
+  max_height = 0.6,
   border = "rounded",
+  gap = 0,
   animate = true,
   lsp_progress = false,
 })
@@ -45,9 +47,10 @@ require("notify").setup({
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `timeout` | `3000` | 通知显示时长，单位为毫秒。 |
-| `max_width` | `50` | 通知最大宽度。 |
-| `min_width` | `30` | 通知最小宽度。 |
-| `max_height` | `12` | 通知最大高度。 |
+| `max_width` | `0.4` | 通知最大宽度；小于 1 的值表示编辑器宽度的比例。 |
+| `min_width` | `40` | 通知最小宽度。 |
+| `max_height` | `0.6` | 通知最大高度；小于 1 的值表示编辑器高度的比例。 |
+| `gap` | `0` | 堆叠通知之间的空行数。 |
 | `margin` | `{ top = 0, right = 1, bottom = 0 }` | 与编辑器边缘的间距。 |
 | `padding` | `1` | 窗口内部边距。 |
 | `border` | `"rounded"` | 浮动窗口边框样式。 |
@@ -56,7 +59,9 @@ require("notify").setup({
 | `animate` | `true` | 使用 animate.nvim 处理堆叠和滑入滑出动画。 |
 | `lsp_progress` | `false` | 将 `LspProgress` 事件显示为通知。 |
 
-单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。设置 `timeout = false` 可以让通知持续显示。重复使用 `id`，或传入 `replace = record`，可以更新已有通知。
+默认布局参考 Snacks 的 compact 样式：居中的边框标题合并显示严重级别图标与标题，窗口使用轻微透明效果，通知堆叠在右上角，宽度和高度支持编辑器尺寸比例。
+
+单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。`render` 回调兼容 Noice 的四参数回调格式，并收到带有 `render()`、`minimum_width()`、`max_width()` 和 `max_height()` 辅助函数的配置对象。设置 `timeout = false` 可以让通知持续显示。重复使用 `id`，或传入 `replace = record`，可以更新已有通知。
 
 ## API
 

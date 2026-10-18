@@ -11,17 +11,24 @@ local LEVELS = {
 
 local defaults = {
 	timeout = 3000,
-	max_width = 50,
-	min_width = 30,
-	max_height = 12,
+	max_width = 0.4,
+	min_width = 40,
+	max_height = 0.6,
 	margin = { top = 0, right = 1, bottom = 0 },
 	padding = 1,
+	gap = 0,
 	border = "rounded",
 	top_down = true,
 	max_history = 200,
 	animate = true,
 	animation = { duration = { step = 0.25, total = 160 }, easing = "outQuad", fps = 60 },
 	icons = {},
+	-- Compatibility for Noice's notify backend.
+	render = function()
+		return function(buf, record)
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, record.message)
+		end
+	end,
 	lsp_progress = false,
 }
 
@@ -80,19 +87,25 @@ local function title_text(title, fallback)
 	return tostring(title or fallback)
 end
 
+local function dimension(value, parent)
+	return math.floor(value < 1 and parent * value or value)
+end
+
 local function dimensions(record)
-	local width = math.max(config.min_width, vim.fn.strdisplaywidth(record.title[1]) + 2)
+	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
+	local title = icon .. " " .. (record.title[1] ~= "" and record.title[1] or "Notification")
+	local width = math.max(config.min_width, vim.fn.strdisplaywidth(title) + 2)
 	for _, line in ipairs(record.message) do
 		width = math.max(width, vim.fn.strdisplaywidth(line) + 2)
 	end
-	width = math.min(width + config.padding * 2, math.min(config.max_width, vim.o.columns - config.margin.right - 2))
-	width = math.max(1, width)
+	local max_width = math.min(config.max_width_value, vim.o.columns - config.margin.right - 2)
+	width = math.max(1, math.min(width + config.padding * 2, max_width))
 	local inner = math.max(1, width - config.padding * 2)
 	local height = 0
 	for _, line in ipairs(record.message) do
 		height = height + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / inner))
 	end
-	return width, math.max(1, math.min(height, config.max_height))
+	return width, math.max(1, math.min(height, config.max_height_value))
 end
 
 local function visible()
@@ -120,11 +133,11 @@ local function row_positions()
 		local total = height + (config.border == "none" and 0 or 2)
 		if config.top_down then
 			rows[record.id] = row
-			row = row + total + 1
+			row = row + total + config.gap
 		else
 			row = row - total
 			rows[record.id] = row
-			row = row - 1
+			row = row - config.gap
 		end
 	end
 	return rows
@@ -179,9 +192,11 @@ local function render(record)
 			text = record.message,
 			bo = { modifiable = false, bufhidden = "wipe" },
 			wo = {
-				wrap = true,
+				wrap = false,
 				linebreak = true,
-				winblend = 0,
+				conceallevel = 2,
+				colorcolumn = "",
+				winblend = 5,
 				winhighlight = table.concat({
 					"Normal:Notify" .. level .. "Body",
 					"NormalNC:Notify" .. level .. "Body",
@@ -189,8 +204,8 @@ local function render(record)
 					"FloatTitle:Notify" .. level .. "Title",
 				}, ","),
 			},
-			title = { { " " .. icon .. " ", "Notify" .. level .. "Icon" }, { title, "Notify" .. level .. "Title" } },
-			title_pos = "left",
+			title = { { " " .. icon .. " " .. title .. " ", "Notify" .. level .. "Title" } },
+			title_pos = "center",
 			on_close = function(closed_win)
 				record.win = nil
 				if not record.closed then
@@ -231,10 +246,7 @@ local function render(record)
 			"FloatBorder:Notify" .. level .. "Border",
 			"FloatTitle:Notify" .. level .. "Title",
 		}, ",")
-		win:set_title(
-			{ { " " .. icon .. " ", "Notify" .. level .. "Icon" }, { title, "Notify" .. level .. "Title" } },
-			"left"
-		)
+		win:set_title({ { " " .. icon .. " " .. title .. " ", "Notify" .. level .. "Title" } }, "center")
 		win:update()
 	end
 	local row = row_positions()[record.id]
@@ -414,6 +426,24 @@ end
 
 function M.setup(opts)
 	config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
+	local configured_render = config.render
+	config.render = function()
+		if type(configured_render) == "function" then
+			return configured_render
+		end
+		return defaults.render()
+	end
+	config.max_width_value = dimension(config.max_width, vim.o.columns)
+	config.max_height_value = dimension(config.max_height, vim.o.lines)
+	config.minimum_width = function()
+		return config.min_width
+	end
+	config.max_width = function()
+		return config.max_width_value
+	end
+	config.max_height = function()
+		return config.max_height_value
+	end
 	Win = require("win")
 	Animate = require("animate")
 	pcall(vim.api.nvim_del_augroup_by_name, progress_group)
