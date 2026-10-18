@@ -37,20 +37,28 @@ local Win
 local Animate
 local original_notify
 local progress = {}
+local progress_win
 local progress_timer
+local progress_spinner_timer
 local progress_done_timer
 local progress_group = "notify_lsp_progress"
 local progress_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local render_progress
 
 local function now()
 	return vim.uv and vim.uv.now() or vim.loop.now()
 end
 
 local function stop_timer(timer)
-	if timer then
-		pcall(timer.stop, timer)
-		pcall(timer.close, timer)
+	if not timer then
+		return
 	end
+	if type(timer) == "number" then
+		pcall(vim.fn.timer_stop, timer)
+		return
+	end
+	pcall(timer.stop, timer)
+	pcall(timer.close, timer)
 end
 
 local function level_info(level)
@@ -91,7 +99,13 @@ local function dimension(value, parent)
 	return math.floor(value < 1 and parent * value or value)
 end
 
+local function refresh_dimensions()
+	config.max_width_value = dimension(config._max_width, vim.o.columns)
+	config.max_height_value = dimension(config._max_height, vim.o.lines)
+end
+
 local function dimensions(record)
+	refresh_dimensions()
 	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
 	local title = icon .. "  " .. (record.title[1] ~= "" and record.title[1] or "Notification")
 	local width = math.max(config.min_width, vim.fn.strdisplaywidth(title) + 2)
@@ -100,11 +114,8 @@ local function dimensions(record)
 	end
 	local max_width = math.min(config.max_width_value, vim.o.columns - config.margin.right - 2)
 	width = math.max(1, math.min(width + config.padding * 2, max_width))
-	local inner = math.max(1, width - config.padding * 2)
-	local height = 2
-	for _, line in ipairs(record.message) do
-		height = height + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / inner))
-	end
+	-- Notifications use nowrap, so each message line occupies exactly one row.
+	local height = 2 + #record.message
 	return width, math.max(1, math.min(height, config.max_height_value))
 end
 
@@ -116,7 +127,7 @@ local function set_buffer(record)
 	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
 	local title = icon .. "  " .. (record.title[1] ~= "" and record.title[1] or "Notification")
 	local width = dimensions(record)
-	local separator = string.rep("─", math.max(1, width - config.padding * 2))
+	local separator = string.rep("━", math.max(1, width - config.padding * 2))
 	local lines = { title, separator }
 	vim.list_extend(lines, record.message)
 	record.namespace = record.namespace or vim.api.nvim_create_namespace("notify:" .. record.id)
@@ -124,7 +135,14 @@ local function set_buffer(record)
 	vim.api.nvim_buf_set_lines(win.buf, 0, -1, false, lines)
 	vim.bo[win.buf].modifiable = false
 	vim.api.nvim_buf_clear_namespace(win.buf, record.namespace, 0, -1)
-	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Title", 0, 0, -1)
+	local icon_end = #icon
+	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Icon", 0, 0, icon_end)
+	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Title", 0, icon_end, -1)
+	vim.api.nvim_buf_set_extmark(win.buf, record.namespace, 0, 0, {
+		virt_text = { { " " .. record.title[2] .. " ", "Notify" .. record.level_name .. "Title" } },
+		virt_text_pos = "right_align",
+		priority = 10,
+	})
 	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Separator", 1, 0, -1)
 	for line = 2, #lines - 1 do
 		vim.api.nvim_buf_add_highlight(
@@ -204,13 +222,14 @@ local function render(record)
 	if not win or not win:valid() then
 		local row = row_positions()[record.id] or 0
 		local col = math.max(0, vim.o.columns - width - config.margin.right)
-		local initial_col = config.animate and vim.o.columns + 1 or col
+		local initial_width = config.animate and 1 or width
+		local initial_col = config.animate and vim.o.columns - config.margin.right - initial_width or col
 		win = Win({
 			position = "float",
 			relative = "editor",
 			row = row,
 			col = initial_col,
-			width = width,
+			width = initial_width,
 			height = height,
 			border = config.border,
 			zindex = 80,
@@ -255,12 +274,14 @@ local function render(record)
 			record.on_open(win.win, record)
 		end
 		if config.animate and Animate then
-			Animate(initial_col, col, function(value)
+			Animate(initial_width, width, function(value)
 				if win:valid() then
-					win.opts.col = math.floor(value + 0.5)
+					local current_width = math.floor(value + 0.5)
+					win.opts.width = current_width
+					win.opts.col = vim.o.columns - config.margin.right - current_width
 					win:update()
 				end
-			end, vim.tbl_extend("force", config.animation, { int = true, id = "notify:col:" .. record.id }))
+			end, vim.tbl_extend("force", config.animation, { int = true, id = "notify:width:" .. record.id }))
 		end
 	else
 		set_buffer(record)
@@ -296,16 +317,18 @@ local function close(record, animate)
 	if record.win and record.win:valid() then
 		local win = record.win
 		if animate and Animate and config.animate then
-			local from = win.opts.col or 0
-			Animate(from, vim.o.columns + 2, function(value, ctx)
+			local from = win.opts.width or dimensions(record)
+			Animate(from, 1, function(value, ctx)
 				if win:valid() then
-					win.opts.col = math.floor(value + 0.5)
+					local current_width = math.max(1, math.floor(value + 0.5))
+					win.opts.width = current_width
+					win.opts.col = vim.o.columns - config.margin.right - current_width
 					win:update()
 					if ctx.done then
 						win:close()
 					end
 				end
-			end, vim.tbl_extend("force", config.animation, { int = true, id = "notify:col:" .. record.id }))
+			end, vim.tbl_extend("force", config.animation, { int = true, id = "notify:width:" .. record.id }))
 		else
 			win:close()
 		end
@@ -370,7 +393,6 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		render(old)
 		if opts.render then
 			pcall(opts.render, old.win.buf, old, {}, config)
-			set_buffer(old)
 		end
 		old.timer = old.timeout ~= false
 				and old.timeout ~= 0
@@ -417,7 +439,6 @@ local function notify_impl(message, level, opts, source, reserved_id)
 	render(record)
 	if opts.render then
 		pcall(opts.render, record.win.buf, record, {}, config)
-		set_buffer(record)
 	end
 	record.timer = opts.timeout ~= false
 			and opts.timeout ~= 0
@@ -459,8 +480,9 @@ function M.setup(opts)
 		end
 		return defaults.render()
 	end
-	config.max_width_value = dimension(config.max_width, vim.o.columns)
-	config.max_height_value = dimension(config.max_height, vim.o.lines)
+	config._max_width = config.max_width
+	config._max_height = config.max_height
+	refresh_dimensions()
 	config.minimum_width = function()
 		return config.min_width
 	end
@@ -476,8 +498,14 @@ function M.setup(opts)
 	progress = {}
 	stop_timer(progress_timer)
 	progress_timer = nil
+	stop_timer(progress_spinner_timer)
+	progress_spinner_timer = nil
 	stop_timer(progress_done_timer)
 	progress_done_timer = nil
+	if progress_win and progress_win:valid() then
+		progress_win:close()
+	end
+	progress_win = nil
 	Bus.unsubscribe("notify.nvim")
 	Bus.subscribe(
 		"notify.nvim",
@@ -504,6 +532,18 @@ function M.setup(opts)
 			end
 		end
 	)
+	local layout_group = vim.api.nvim_create_augroup("notify_layout", { clear = true })
+	vim.api.nvim_create_autocmd("VimResized", {
+		group = layout_group,
+		callback = function()
+			for _, record in ipairs(visible()) do
+				render(record)
+			end
+			if config.lsp_progress and next(progress) then
+				render_progress(config.lsp_progress == true and {} or config.lsp_progress)
+			end
+		end,
+	})
 	if original_notify == nil then
 		original_notify = vim.notify
 	end
@@ -557,9 +597,81 @@ function M.dismiss(opts)
 		progress = {}
 		stop_timer(progress_timer)
 		progress_timer = nil
+		stop_timer(progress_spinner_timer)
+		progress_spinner_timer = nil
 		stop_timer(progress_done_timer)
 		progress_done_timer = nil
+		if progress_win and progress_win:valid() then
+			progress_win:close()
+		end
+		progress_win = nil
 	end
+end
+
+render_progress = function(opts)
+	local tasks = {}
+	for _, task in pairs(progress) do
+		local percentage = task.percentage and (" %d%%"):format(task.percentage) or ""
+		tasks[#tasks + 1] = task.title .. percentage .. (task.message and ("\n  " .. task.message) or "")
+	end
+	table.sort(tasks)
+	if #tasks == 0 then
+		stop_timer(progress_spinner_timer)
+		progress_spinner_timer = nil
+		if progress_win and progress_win:valid() then
+			progress_win:close()
+		end
+		progress_win = nil
+		return false
+	end
+
+	if not progress_spinner_timer then
+		progress_spinner_timer = vim.fn.timer_start(80, function()
+			if next(progress) then
+				render_progress(opts)
+			else
+				stop_timer(progress_spinner_timer)
+				progress_spinner_timer = nil
+			end
+		end, { ["repeat"] = -1 })
+	end
+
+	local uv = vim.uv or vim.loop
+	local frame = progress_frames[math.floor(uv.hrtime() / 80000000) % #progress_frames + 1]
+	local lines = { frame .. "  " .. (opts.title or "LSP Progress") }
+	vim.list_extend(lines, tasks)
+	local width = 0
+	for _, line in ipairs(lines) do
+		width = math.max(width, vim.fn.strdisplaywidth(line))
+	end
+	width = math.min(math.max(width + 2, opts.min_width or 24), opts.max_width or 60)
+	local height = #lines
+	local row = vim.o.lines - vim.o.cmdheight - (opts.margin_bottom or 1) - height
+	local col = vim.o.columns - (opts.margin_right or 1) - width
+	if not progress_win or not progress_win:valid() then
+		progress_win = Win({
+			position = "float",
+			relative = "editor",
+			row = math.max(0, row),
+			col = math.max(0, col),
+			width = width,
+			height = height,
+			border = "none",
+			zindex = 80,
+			enter = false,
+			focusable = false,
+			style = "minimal",
+			bo = { modifiable = false, bufhidden = "wipe" },
+			wo = { wrap = false, winblend = 5, winhighlight = "Normal:NotifyINFOBody,NormalNC:NotifyINFOBody" },
+		})
+	end
+	vim.bo[progress_win.buf].modifiable = true
+	vim.api.nvim_buf_set_lines(progress_win.buf, 0, -1, false, lines)
+	vim.bo[progress_win.buf].modifiable = false
+	progress_win.opts.row, progress_win.opts.col = math.max(0, row), math.max(0, col)
+	progress_win.opts.width, progress_win.opts.height = width, height
+	progress_win:update()
+	return true
 end
 
 function M.setup_progress(opts)
@@ -570,15 +682,19 @@ function M.setup_progress(opts)
 	end
 	stop_timer(progress_timer)
 	progress_timer = nil
+	stop_timer(progress_spinner_timer)
+	progress_spinner_timer = nil
 	stop_timer(progress_done_timer)
 	progress_done_timer = nil
+	if progress_win and progress_win:valid() then
+		progress_win:close()
+	end
+	progress_win = nil
 	progress = {}
 	local group = vim.api.nvim_create_augroup(progress_group, { clear = true })
 	vim.api.nvim_create_autocmd("LspProgress", {
 		group = group,
 		callback = function(event)
-			stop_timer(progress_done_timer)
-			progress_done_timer = nil
 			local data = event.data or {}
 			local params = data.params or {}
 			local value = params.value
@@ -587,6 +703,13 @@ function M.setup_progress(opts)
 				return
 			end
 			local key = tostring(client.id) .. ":" .. tostring(params.token)
+			local tag = "lsp.progress."
+				.. (value.kind == "begin" and "start" or value.kind == "end" and "end" or "update")
+			Bus.emit(tag, vim.log.levels.INFO, value.message or value.title or "", {
+				client = client,
+				token = params.token,
+				value = value,
+			})
 			if value.kind == "end" then
 				progress[key] = nil
 			else
@@ -600,32 +723,7 @@ function M.setup_progress(opts)
 			stop_timer(progress_timer)
 			progress_timer = vim.defer_fn(function()
 				progress_timer = nil
-				local tasks = {}
-				for _, task in pairs(progress) do
-					local percentage = task.percentage and (" %d%%"):format(task.percentage) or ""
-					tasks[#tasks + 1] = task.title .. percentage .. (task.message and ("\n  " .. task.message) or "")
-				end
-				table.sort(tasks)
-				if #tasks == 0 then
-					local current = M._notifications[M._ids.lsp_progress]
-					if current then
-						current.timeout = opts.done_timeout or 800
-						progress_done_timer = vim.defer_fn(function()
-							progress_done_timer = nil
-							if vim.tbl_isempty(progress) and M._notifications[current.id] == current then
-								close(current, true)
-							end
-						end, current.timeout)
-					end
-					return
-				end
-				local uv = vim.uv or vim.loop
-				local frame = progress_frames[math.floor(uv.hrtime() / 80000000) % #progress_frames + 1]
-				notify(table.concat(tasks, "\n"), vim.log.levels.INFO, {
-					id = "lsp_progress",
-					title = frame .. "  " .. (opts.title or "LSP Progress"),
-					timeout = false,
-				})
+				render_progress(opts)
 			end, opts.throttle or 80)
 		end,
 	})
@@ -638,6 +736,7 @@ function M.restore()
 		original_notify = nil
 	end
 	pcall(vim.api.nvim_del_augroup_by_name, progress_group)
+	pcall(vim.api.nvim_del_augroup_by_name, "notify_layout")
 	Bus.unsubscribe("notify.nvim")
 	M.dismiss({ pending = true })
 end

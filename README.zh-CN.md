@@ -52,14 +52,13 @@ require("notify").setup({
 | `min_width` | `40` | 通知最小宽度。 |
 | `max_height` | `0.6` | 通知最大高度；小于 1 的值表示编辑器高度的比例。 |
 | `gap` | `0` | 堆叠通知之间的空行数。 |
-| `margin` | `{ top = 1, right = 1, bottom = 0 }` | 边缘间距；默认顶部空出一行，避免通知覆盖 tabline。 |
-| `margin` | `{ top = 0, right = 1, bottom = 0 }` | 与编辑器边缘的间距。 |
+| `margin` | `{ top = 1, right = 1, bottom = 0 }` | 与编辑器边缘的间距；默认顶部空出一行，避免通知覆盖 tabline。 |
 | `padding` | `1` | 窗口内部边距。 |
 | `border` | `"rounded"` | 浮动窗口边框样式。 |
 | `top_down` | `true` | 为 true 时从顶部开始堆叠通知。 |
 | `max_history` | `200` | 历史记录保留数量。 |
 | `animate` | `true` | 使用 animate.nvim 处理堆叠和滑入滑出动画。 |
-| `lsp_progress` | `false` | 将 `LspProgress` 事件显示为通知。 |
+| `lsp_progress` | `false` | 将 `LspProgress` 显示在右下角无边框浮窗中，不进入通知历史。 |
 
 默认布局参考 nvim-notify/Snacks 的 compact 样式：每条通知都有按严重级别着色的顶部标题、分割线和高亮正文，并显示在带边框的窗口中。通知堆叠在右上角，通过 animate.nvim 从右侧滑入；宽度和高度支持编辑器尺寸比例。
 

@@ -49,7 +49,7 @@ local rendered = vim.notify("Noice render", vim.log.levels.INFO, {
 check(noice_render_called and rendered.win:valid(), "Noice render compatibility")
 local visual = vim.notify("body line 1\nbody line 2", vim.log.levels.ERROR, { timeout = false })
 local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)
-check(#visual_lines == 4 and visual_lines[2]:find("─", 1, true), "notification title separator")
+check(#visual_lines == 4 and visual_lines[2]:find("━", 1, true), "notification title separator")
 check(#vim.api.nvim_buf_get_extmarks(visual.win.buf, -1, 0, -1, {}) > 0, "notification highlights")
 
 local replaced = vim.notify("replaced message", vim.log.levels.ERROR, {
@@ -135,6 +135,20 @@ check(failure_reported, "subscriber failure reporting")
 
 notify.setup({ animate = false, lsp_progress = true })
 check(autocmd_count() > 0, "lsp progress setup")
+local progress_events = 0
+local remove_progress = notify.subscribe(
+	"notify-test-progress",
+	{ prefix = { "lsp.progress." } },
+	vim.log.levels.TRACE,
+	function()
+		progress_events = progress_events + 1
+	end
+)
+notify.bus.emit("lsp.progress.update", vim.log.levels.INFO, "progress", {})
+check(progress_events == 1, "lsp progress bus event")
+local history_before_progress = #notify.history({ include_hidden = true })
+remove_progress()
+check(#notify.history({ include_hidden = true }) == history_before_progress, "progress outside history")
 notify.setup({ animate = false, lsp_progress = false })
 check(autocmd_count() == 0, "lsp progress cleanup")
 
