@@ -63,9 +63,9 @@
 ---@field timer? integer|uv_timer_t
 ---@field win? table
 ---@field namespace? integer
+---@field custom_render? fun(buf: integer, record: notify.Record, hl: table, config: table)
 ---@field on_open? fun(win: integer, record: notify.Record)
 ---@field on_close? fun(win: integer, record: notify.Record)
----@field custom_render? fun(buf: integer, record: notify.Record, hl: table, config: table)
 
 ---@class notify.BusMessage
 ---@field id integer
@@ -110,6 +110,7 @@ local Bus = require("notify.bus")
 local Fidget = require("notify.fidget")
 local LspProgress = require("notify.lsp")
 local LEVELS = require("notify.levels")
+local text = require("notify.text")
 
 local defaults = {
 	timeout = 3000,
@@ -128,12 +129,6 @@ local defaults = {
 	animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
 	style = "default",
 	icons = {},
-	-- Compatibility for Noice's notify backend.
-	render = function()
-		return function(buf, record)
-			vim.api.nvim_buf_set_lines(buf, 0, -1, false, record.message)
-		end
-	end,
 	lsp_progress = false,
 }
 
@@ -277,7 +272,6 @@ local function dimensions(record)
 	return width, math.max(1, math.min(#lines, config.max_height_value))
 end
 
----@param record notify.Record
 local function set_buffer(record, target_width)
 	local win = record.win
 	if not win or not win:valid() then
@@ -289,10 +283,12 @@ local function set_buffer(record, target_width)
 		lines[2] = string.rep("━", math.max(1, width - 2 * config.padding + 1))
 	end
 	record.namespace = record.namespace or vim.api.nvim_create_namespace("notify:" .. record.id)
+	text.setup(win.buf)
 	vim.bo[win.buf].modifiable = true
 	vim.api.nvim_buf_set_lines(win.buf, 0, -1, false, lines)
 	vim.bo[win.buf].modifiable = false
 	vim.api.nvim_buf_clear_namespace(win.buf, record.namespace, 0, -1)
+	text.highlight(win.buf, record.namespace, #lines)
 	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
 	if config.style == "simple" or config.style == "minimal" or config.style == "default" then
 		vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Icon", 0, 0, #icon)
@@ -406,7 +402,14 @@ local function layout()
 	end
 end
 
----@param record notify.Record
+---@param buf integer
+local function render_custom(buf, callback, ...)
+	vim.bo[buf].modifiable = true
+	local ok, err = pcall(callback, buf, ...)
+	vim.bo[buf].modifiable = false
+	return ok, err
+end
+
 local function render(record)
 	local width, height = dimensions(record)
 	local level = record.level_name
@@ -435,7 +438,7 @@ local function render(record)
 			wo = {
 				wrap = false,
 				linebreak = true,
-				conceallevel = 2,
+				conceallevel = 0,
 				colorcolumn = "",
 				winblend = config.stages == "fade" and 95 or 5,
 				winhighlight = table.concat({
@@ -509,7 +512,7 @@ local function show_queued()
 			record.queued = false
 			render(record)
 			if record.custom_render then
-				pcall(record.custom_render, record.win.buf, record, {}, config)
+				render_custom(record.win.buf, record.custom_render, record, {}, config)
 			end
 			record.timer = record.timeout ~= false
 					and record.timeout ~= 0
@@ -638,7 +641,7 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		end
 		render(old)
 		if opts.render then
-			pcall(opts.render, old.win.buf, old, {}, config)
+			render_custom(old.win.buf, opts.render, old, {}, config)
 		end
 		old.timer = old.timeout ~= false
 				and old.timeout ~= 0
@@ -695,7 +698,7 @@ local function notify_impl(message, level, opts, source, reserved_id)
 			renderer = ok and value or nil
 		end
 		if type(renderer) == "function" then
-			pcall(renderer, record.win.buf, record, {}, config)
+			render_custom(record.win.buf, renderer, record, {}, config)
 		end
 		record.timer = opts.timeout ~= false
 				and opts.timeout ~= 0

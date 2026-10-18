@@ -39,18 +39,18 @@ check(first.id and first.level == "INFO", "notification record shape")
 check(first.message[1] == "first message", "notification message")
 check(first.title[1] == "Smoke", "notification title")
 check(notify.history()[1] == first, "notification history")
-local noice_render_called = false
-local rendered = vim.notify("Noice render", vim.log.levels.INFO, {
-	timeout = false,
-	render = function(buf, _, _, render_config)
-		noice_render_called = type(render_config.render) == "function"
-		local renderer = render_config.render()
-		renderer(buf, { message = { "Noice render" } })
-	end,
-})
-check(noice_render_called and rendered.win:valid(), "Noice render compatibility")
-local visual = vim.notify("body line 1\nbody line 2", vim.log.levels.ERROR, { timeout = false })
+local visual = vim.notify("**body line 1**\nbody line 2", vim.log.levels.ERROR, { timeout = false })
 local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)
+check(vim.bo[visual.win.buf].filetype == "markdown", "notification buffers use Markdown highlights")
+check(vim.wo[visual.win.win].conceallevel == 0, "Markdown syntax markers remain visible")
+check(visual_lines[3]:find("**body line 1**", 1, true), "Markdown markers remain visible")
+local markdown_marks = vim.api.nvim_buf_get_extmarks(visual.win.buf, visual.namespace, 0, -1, { details = true })
+check(
+	vim.tbl_contains(vim.tbl_map(function(mark)
+		return mark[4].hl_group
+	end, markdown_marks), "@markup.strong.markdown_inline"),
+	"Markdown syntax receives extmark highlights"
+)
 check(#visual_lines == 4 and visual_lines[2]:find("━", 1, true), "notification title separator")
 check(#vim.api.nvim_buf_get_extmarks(visual.win.buf, -1, 0, -1, {}) > 0, "notification highlights")
 check(
@@ -62,7 +62,7 @@ local replaced = vim.notify("replaced message", vim.log.levels.ERROR, {
 	timeout = false,
 })
 check(replaced == first and replaced.level == "ERROR", "replacement by string id")
-check(#notify.history() == 3, "replacement should not duplicate history")
+check(#notify.history() == 2, "replacement should not duplicate history")
 
 local replaced_by_record = vim.notify("replaced again", nil, {
 	replace = first,

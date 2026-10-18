@@ -80,7 +80,7 @@ The `default` renderer shows an icon and title, a separator spanning the notific
 
 Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. `id` identifies a notification; sending another notification with the same ID replaces its record and window. `replace` accepts an existing ID or record. `keep` may be a boolean or a predicate that postpones timeout dismissal while it returns true. `hide_from_history` omits a record from history unless `history({ include_hidden = true })` is used. `on_open` and `on_close` receive the window ID and record.
 
-The custom `render` callback receives `(buf, record, highlights, config)`. The config provides `render()`, `minimum_width()`, `max_width()`, and `max_height()` helpers for integrations such as Noice. Set `timeout = false` for a persistent notification.
+The custom `render` callback receives `(buf, record, highlights, config)` and can write custom buffer content. The config provides `minimum_width()`, `max_width()`, and `max_height()` helpers. Set `timeout = false` for a persistent notification.
 
 ## API
 

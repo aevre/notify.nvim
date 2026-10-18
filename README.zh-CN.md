@@ -80,7 +80,7 @@ Fidget 后端可通过 `fidget = { max_queue = 5, margin_bottom = 1, margin_righ
 
 单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。`id` 用于标识通知；再次使用相同 ID 会替换原记录和窗口。`replace` 可以接收已有 ID 或记录。`keep` 可以是布尔值，也可以是返回布尔值的函数；函数返回 true 时会推迟超时关闭。`hide_from_history` 会将记录从默认历史中隐藏，使用 `history({ include_hidden = true })` 才会包含它。`on_open` 和 `on_close` 会收到窗口 ID 与记录。
 
-自定义 `render` 回调接收 `(buf, record, highlights, config)` 四个参数。`config` 提供 `render()`、`minimum_width()`、`max_width()` 和 `max_height()` 辅助函数，适合 Noice 等集成使用。设置 `timeout = false` 可保持通知显示。
+自定义 `render` 回调接收 `(buf, record, highlights, config)` 四个参数，可用于写入自定义 buffer 内容。`config` 提供 `minimum_width()`、`max_width()` 和 `max_height()` 辅助函数。设置 `timeout = false` 可保持通知显示。
 
 ## API
 
