@@ -166,6 +166,7 @@ local function layout()
 				width = width,
 				height = 1,
 				border = "none",
+				backdrop = false,
 				zindex = 80 + index,
 				enter = false,
 				focusable = false,

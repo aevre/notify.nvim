@@ -190,6 +190,9 @@ local token = fidget.progress("building", {
 })
 check(token == "7:single-line", "fidget progress API identifies task")
 check(#fidget.history() == 2 and fidget.history()[2].state == "active", "fidget progress history")
+for _, task in pairs(fidget._progress or {}) do
+	check(not task.win or not task.win.backdrop, "fidget windows do not create a backdrop")
+end
 check(require("notify.levels").name(vim.log.levels.WARN) == "WARN", "shared level metadata")
 local fidget_win
 vim.wait(250, function()
