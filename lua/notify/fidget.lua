@@ -39,6 +39,7 @@ local M = {}
 
 local Win = require("win")
 local levels = require("notify.levels")
+local util = require("notify.util")
 ---@class notify.FidgetTask
 ---@field started number
 ---@field title? string
@@ -74,7 +75,7 @@ local progress = {}
 local current_opts = {}
 ---@type integer|nil
 local render_timer, spinner_timer
----@type fun(from: number, to: number, callback: fun(value: number, ctx?: animate.Ctx), opts?: table)|nil
+---@type notify.Animate|nil
 local Animate
 local next_message_id = 0
 local history = {}
@@ -104,13 +105,6 @@ local function spinner(value, interval)
 	return frames[math.floor((vim.uv or vim.loop).hrtime() / (interval * 1000000)) % #frames + 1]
 end
 
----@param timer? integer
-local function stop_timer(timer)
-	if timer then
-		pcall(vim.fn.timer_stop, timer)
-	end
-end
-
 ---@return notify.FidgetEntry[]
 local function tasks()
 	local result = {}
@@ -121,19 +115,6 @@ local function tasks()
 		return a.task.started < b.task.started
 	end)
 	return result
-end
-
----@param buf integer
----@param ns integer
----@param group string
----@param row integer
----@param start_col integer
----@param end_col integer
-local function highlight(buf, ns, group, row, start_col, end_col)
-	vim.api.nvim_buf_set_extmark(buf, ns, row, start_col, {
-		end_col = end_col,
-		hl_group = group,
-	})
 end
 
 local function layout()
@@ -209,7 +190,7 @@ local function layout()
 		vim.api.nvim_buf_clear_namespace(task.win.buf, ns, 0, -1)
 		local icon_start = #padding
 		if icon ~= "" then
-			highlight(
+			util.highlight(
 				task.win.buf,
 				ns,
 				task.spinner and "NotifyProgressSpinner" or "NotifyFidgetLevel",
@@ -220,18 +201,18 @@ local function layout()
 		end
 		local tag_start = icon_start + #icon + (icon ~= "" and 2 or 0)
 		if tag ~= "" then
-			highlight(task.win.buf, ns, "NotifyFidgetLevel", 0, tag_start, tag_start + #tag - 2)
+			util.highlight(task.win.buf, ns, "NotifyFidgetLevel", 0, tag_start, tag_start + #tag - 2)
 		end
 		local task_start = tag_start + #tag
 		local title = tostring(task.title or "Working")
-		highlight(task.win.buf, ns, "NotifyProgressTask", 0, task_start, #line)
-		highlight(task.win.buf, ns, "NotifyProgressTitle", 0, task_start, task_start + #title)
+		util.highlight(task.win.buf, ns, "NotifyProgressTask", 0, task_start, #line)
+		util.highlight(task.win.buf, ns, "NotifyProgressTitle", 0, task_start, task_start + #title)
 		if task.message and task.message ~= "" then
-			highlight(task.win.buf, ns, "NotifyProgressMessage", 0, task_start + #title + 2, #line)
+			util.highlight(task.win.buf, ns, "NotifyProgressMessage", 0, task_start + #title + 2, #line)
 		end
 		local start, finish = line:find(" %d+%%", task_start)
 		if start and finish then
-			highlight(task.win.buf, ns, "NotifyProgressPercentage", 0, start - 1, finish)
+			util.highlight(task.win.buf, ns, "NotifyProgressPercentage", 0, start - 1, finish)
 		end
 		local old_row = task.win.opts.row
 		old_row = type(old_row) == "number" and old_row or row
@@ -266,7 +247,7 @@ local function refresh_spinner()
 				if active then
 					layout()
 				else
-					stop_timer(spinner_timer)
+					util.stop_timer(spinner_timer)
 					spinner_timer = nil
 				end
 			end)
@@ -284,8 +265,8 @@ local function clear()
 		end
 	end
 	progress = {}
-	stop_timer(render_timer)
-	stop_timer(spinner_timer)
+	util.stop_timer(render_timer)
+	util.stop_timer(spinner_timer)
 	render_timer, spinner_timer = nil, nil
 end
 
@@ -298,7 +279,7 @@ local function render()
 end
 
 ---@param opts? boolean|notify.FidgetConfig
----@param animate? fun(from: number, to: number, callback: fun(value: number, ctx?: animate.Ctx), opts?: table)
+---@param animate? notify.Animate
 function M.setup(opts, animate)
 	M.restore()
 	if type(opts) == "table" then
@@ -387,7 +368,7 @@ function M.notify(message, opts)
 	}
 	remember(record)
 	local task = {
-		started = (vim.uv or vim.loop).now(),
+		started = util.now(),
 		title = title,
 		message = message,
 		icon = opts.icon,
@@ -446,7 +427,7 @@ function M.progress(message, opts)
 		return key
 	end
 	local previous = progress[key] or {}
-	previous.started = previous.started or (vim.uv or vim.loop).now()
+	previous.started = previous.started or util.now()
 	previous.title, previous.message = opts.title or previous.title, message or previous.message
 	previous.percentage, previous.icon = opts.percentage or previous.percentage, opts.icon or previous.icon
 	previous.level = levels.name(opts.level or previous.level)
