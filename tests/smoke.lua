@@ -47,13 +47,17 @@ local rendered = vim.notify("Noice render", vim.log.levels.INFO, {
 	end,
 })
 check(noice_render_called and rendered.win:valid(), "Noice render compatibility")
+local visual = vim.notify("body line 1\nbody line 2", vim.log.levels.ERROR, { timeout = false })
+local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)
+check(#visual_lines == 4 and visual_lines[2]:find("─", 1, true), "notification title separator")
+check(#vim.api.nvim_buf_get_extmarks(visual.win.buf, -1, 0, -1, {}) > 0, "notification highlights")
 
 local replaced = vim.notify("replaced message", vim.log.levels.ERROR, {
 	id = "smoke",
 	timeout = false,
 })
 check(replaced == first and replaced.level == "ERROR", "replacement by string id")
-check(#notify.history() == 2, "replacement should not duplicate history")
+check(#notify.history() == 3, "replacement should not duplicate history")
 
 local replaced_by_record = vim.notify("replaced again", nil, {
 	replace = first,

@@ -59,7 +59,7 @@ require("notify").setup({
 | `animate` | `true` | Use animate.nvim for stacking and slide transitions. |
 | `lsp_progress` | `false` | Display `LspProgress` events as a notification. |
 
-The default layout follows Snacks' compact style: a centered bordered title combines the severity icon and title, windows use a small transparent blend, notifications stack at the top-right, and width/height may be fractional editor limits.
+The default layout follows the compact nvim-notify/Snacks style: each notification has a severity-colored title row, a separator, and highlighted message content inside a bordered window. Notifications stack at the top-right and slide in from the right with animate.nvim; width and height may be fractional editor limits.
 
 Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. The `render` callback follows Noice's four-argument callback contract and receives a config with `render()`, `minimum_width()`, `max_width()`, and `max_height()` helpers. Set `timeout = false` for a persistent notification. Reuse `id` or pass `replace = record` to update an existing notification.
 

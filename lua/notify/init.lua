@@ -21,7 +21,7 @@ local defaults = {
 	top_down = true,
 	max_history = 200,
 	animate = true,
-	animation = { duration = { step = 0.25, total = 160 }, easing = "outQuad", fps = 60 },
+	animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
 	icons = {},
 	-- Compatibility for Noice's notify backend.
 	render = function()
@@ -93,7 +93,7 @@ end
 
 local function dimensions(record)
 	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
-	local title = icon .. " " .. (record.title[1] ~= "" and record.title[1] or "Notification")
+	local title = icon .. "  " .. (record.title[1] ~= "" and record.title[1] or "Notification")
 	local width = math.max(config.min_width, vim.fn.strdisplaywidth(title) + 2)
 	for _, line in ipairs(record.message) do
 		width = math.max(width, vim.fn.strdisplaywidth(line) + 2)
@@ -101,11 +101,41 @@ local function dimensions(record)
 	local max_width = math.min(config.max_width_value, vim.o.columns - config.margin.right - 2)
 	width = math.max(1, math.min(width + config.padding * 2, max_width))
 	local inner = math.max(1, width - config.padding * 2)
-	local height = 0
+	local height = 2
 	for _, line in ipairs(record.message) do
 		height = height + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / inner))
 	end
 	return width, math.max(1, math.min(height, config.max_height_value))
+end
+
+local function set_buffer(record)
+	local win = record.win
+	if not win or not win:valid() then
+		return
+	end
+	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
+	local title = icon .. "  " .. (record.title[1] ~= "" and record.title[1] or "Notification")
+	local width = dimensions(record)
+	local separator = string.rep("─", math.max(1, width - config.padding * 2))
+	local lines = { title, separator }
+	vim.list_extend(lines, record.message)
+	record.namespace = record.namespace or vim.api.nvim_create_namespace("notify:" .. record.id)
+	vim.bo[win.buf].modifiable = true
+	vim.api.nvim_buf_set_lines(win.buf, 0, -1, false, lines)
+	vim.bo[win.buf].modifiable = false
+	vim.api.nvim_buf_clear_namespace(win.buf, record.namespace, 0, -1)
+	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Title", 0, 0, -1)
+	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Separator", 1, 0, -1)
+	for line = 2, #lines - 1 do
+		vim.api.nvim_buf_add_highlight(
+			win.buf,
+			record.namespace,
+			"Notify" .. record.level_name .. "Message",
+			line,
+			0,
+			-1
+		)
+	end
 end
 
 local function visible()
@@ -170,13 +200,11 @@ end
 local function render(record)
 	local width, height = dimensions(record)
 	local level = record.level_name
-	local icon = record.icon or config.icons[level] or LEVELS[level].icon
-	local title = record.title[1] ~= "" and record.title[1] or "Notification"
 	local win = record.win
 	if not win or not win:valid() then
 		local row = row_positions()[record.id] or 0
 		local col = math.max(0, vim.o.columns - width - config.margin.right)
-		local initial_col = config.animate and col + 3 or col
+		local initial_col = config.animate and vim.o.columns + 1 or col
 		win = Win({
 			position = "float",
 			relative = "editor",
@@ -189,7 +217,7 @@ local function render(record)
 			enter = false,
 			focusable = false,
 			style = "minimal",
-			text = record.message,
+			text = { "", "" },
 			bo = { modifiable = false, bufhidden = "wipe" },
 			wo = {
 				wrap = false,
@@ -204,8 +232,6 @@ local function render(record)
 					"FloatTitle:Notify" .. level .. "Title",
 				}, ","),
 			},
-			title = { { " " .. icon .. " " .. title .. " ", "Notify" .. level .. "Title" } },
-			title_pos = "center",
 			on_close = function(closed_win)
 				record.win = nil
 				if not record.closed then
@@ -224,6 +250,7 @@ local function render(record)
 			end,
 		})
 		record.win = win
+		set_buffer(record)
 		if record.on_open then
 			record.on_open(win.win, record)
 		end
@@ -236,9 +263,7 @@ local function render(record)
 			end, vim.tbl_extend("force", config.animation, { int = true, id = "notify:col:" .. record.id }))
 		end
 	else
-		vim.bo[win.buf].modifiable = true
-		vim.api.nvim_buf_set_lines(win.buf, 0, -1, false, record.message)
-		vim.bo[win.buf].modifiable = false
+		set_buffer(record)
 		win.opts.width, win.opts.height = width, height
 		win.opts.wo.winhighlight = table.concat({
 			"Normal:Notify" .. level .. "Body",
@@ -246,7 +271,6 @@ local function render(record)
 			"FloatBorder:Notify" .. level .. "Border",
 			"FloatTitle:Notify" .. level .. "Title",
 		}, ",")
-		win:set_title({ { " " .. icon .. " " .. title .. " ", "Notify" .. level .. "Title" } }, "center")
 		win:update()
 	end
 	local row = row_positions()[record.id]
@@ -346,6 +370,7 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		render(old)
 		if opts.render then
 			pcall(opts.render, old.win.buf, old, {}, config)
+			set_buffer(old)
 		end
 		old.timer = old.timeout ~= false
 				and old.timeout ~= 0
@@ -392,6 +417,7 @@ local function notify_impl(message, level, opts, source, reserved_id)
 	render(record)
 	if opts.render then
 		pcall(opts.render, record.win.buf, record, {}, config)
+		set_buffer(record)
 	end
 	record.timer = opts.timeout ~= false
 			and opts.timeout ~= 0
