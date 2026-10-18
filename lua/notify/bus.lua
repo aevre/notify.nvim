@@ -1,3 +1,16 @@
+---@class notify.BusMeta
+---@field source? string
+---@field fast? boolean
+---@field level_provided? boolean
+---@field notify_id? integer
+---@field [string] any
+
+---@class notify.BusSubscriber
+---@field interested notify.RouteMatch
+---@field min_level integer
+---@field handler fun(message: notify.BusMessage)
+---@field backend? string
+
 local M = { subscribers = {}, queue = {}, dispatching = false, next_id = 0 }
 
 local function now()
@@ -36,6 +49,7 @@ local function matches(interested, tag)
 	return false
 end
 
+---@param routes? notify.Route[]
 function M.set_routes(routes)
 	M.routes = routes
 end
@@ -53,6 +67,7 @@ local function routed_to(subscriber, message)
 	for _, route in ipairs(routes) do
 		local selector = route.match or {}
 		if matches(selector, message.tag) and (not selector.source or selector.source == message.meta.source) then
+			---@type string[]
 			local targets = type(route.to) == "table" and route.to or { route.to }
 			for _, target in ipairs(targets) do
 				if target == subscriber.backend then
@@ -65,6 +80,12 @@ local function routed_to(subscriber, message)
 	return false
 end
 
+---@param id string
+---@param interested? notify.RouteMatch
+---@param min_level? notify.Level
+---@param handler fun(message: notify.BusMessage)
+---@param backend? string
+---@return fun() unsubscribe
 function M.subscribe(id, interested, min_level, handler, backend)
 	assert(type(id) == "string" and type(handler) == "function", "notify.bus: invalid subscriber")
 	assert(not M.subscribers[id], "notify.bus: subscriber already exists: " .. id)
@@ -79,6 +100,7 @@ function M.subscribe(id, interested, min_level, handler, backend)
 	end
 end
 
+---@param id string
 function M.unsubscribe(id)
 	M.subscribers[id] = nil
 end
@@ -110,6 +132,12 @@ local function drain()
 	M.dispatching = false
 end
 
+---@param tag string
+---@param level? notify.Level
+---@param content any
+---@param data? table
+---@param meta? notify.BusMeta
+---@return integer id
 function M.emit(tag, level, content, data, meta)
 	M.next_id = M.next_id + 1
 	local message = {

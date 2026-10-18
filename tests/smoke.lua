@@ -174,10 +174,11 @@ local token = fidget.progress("building", {
 	icon = "LSP",
 })
 check(token == "7:single-line", "fidget progress API identifies task")
+check(require("notify.levels").name(vim.log.levels.WARN) == "WARN", "shared level metadata")
 local fidget_win
 vim.wait(250, function()
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
-		if vim.wo[win].winhighlight:find("NotifyProgress", 1, true) then
+		if vim.wo[win].winhighlight:find("NotifyFidgetBackground", 1, true) then
 			fidget_win = win
 			return true
 		end
@@ -195,21 +196,61 @@ local fidget_wins = {}
 vim.wait(150, function()
 	fidget_wins = {}
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
-		if vim.wo[win].winhighlight:find("NotifyProgress", 1, true) then
+		if vim.wo[win].winhighlight:find("NotifyFidgetBackground", 1, true) then
 			fidget_wins[#fidget_wins + 1] = win
 		end
 	end
 	return #fidget_wins == 2
 end, 10)
 check(#fidget_wins == 2, "fidget stacks concurrent task windows")
+local namespace = vim.api.nvim_get_namespaces()["notify-progress"]
+local has_level_highlight = false
+for _, win in ipairs(fidget_wins) do
+	local buf = vim.api.nvim_win_get_buf(win)
+	has_level_highlight = has_level_highlight or #vim.api.nvim_buf_get_extmarks(buf, namespace, 0, -1, {}) > 0
+end
+check(has_level_highlight, "fidget highlights persist when stacked")
 local has_event_icon = false
 for _, win in ipairs(fidget_wins) do
 	local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1]
-	has_event_icon = has_event_icon or line:find("LSP  Index", 1, true) ~= nil
+	has_event_icon = has_event_icon or line:find("LSP  INFO  Index", 1, true) ~= nil
 end
 check(has_event_icon, "fidget uses event icon")
+fidget.progress("spinning", {
+	token = "custom-spinner",
+	spinner = true,
+	spinner_frames = { "A", "B" },
+	title = "Custom",
+})
+check(
+	vim.wait(100, function()
+		for _, win in ipairs(vim.api.nvim_list_wins()) do
+			local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1]
+			if line and (line:find("A  INFO", 1, true) or line:find("B  INFO", 1, true)) then
+				return true
+			end
+		end
+		return false
+	end, 10),
+	"custom spinner frame rendered"
+)
+local message_id = fidget.send("Build", "Compiling")
+check(message_id ~= nil, "fidget send creates an updateable task")
+fidget.update(message_id, "Done")
+fidget.finish(message_id, "Done")
+fidget.progress("warning", { token = "warn", level = vim.log.levels.WARN, title = "Disk" })
+fidget.progress("quiet", { token = "none", level = "none", title = "Hidden level" })
+vim.wait(100, function()
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1]
+		if line and line:find("Hidden level", 1, true) then
+			return not line:find("INFO", 1, true) and line:find("Hidden level", 1, true) ~= nil
+		end
+	end
+	return false
+end, 10)
 local history_before_progress = #notify.history({ include_hidden = true })
-local fidget = require("notify.fidget")
+local noice_dots = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 check(fidget and type(fidget.dismiss) == "function", "separate fidget backend")
 local client = { id = 1, name = "smoke" }
 local original_get_client = vim.lsp.get_client_by_id
@@ -223,7 +264,19 @@ vim.api.nvim_exec_autocmds("LspProgress", {
 	},
 })
 vim.wait(100, function()
-	return true
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		local buf = vim.api.nvim_win_get_buf(win)
+		local lines = vim.api.nvim_buf_get_lines(buf, 0, 1, false)
+		if lines[1] and lines[1]:find("Index", 1, true) and not lines[1]:find("INFO", 1, true) then
+			for _, icon in ipairs(noice_dots) do
+				if lines[1]:find(icon, 1, true) then
+					return true
+				end
+			end
+			return false
+		end
+	end
+	return false
 end, 10)
 vim.api.nvim_exec_autocmds("LspProgress", {
 	data = { client_id = client.id, params = { token = "smoke", value = { kind = "end" } } },

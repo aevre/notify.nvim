@@ -1,15 +1,110 @@
+---@alias notify.Level string|integer
+---@alias notify.RouteTarget string|string[]
+
+---@class notify.RouteMatch
+---@field exact? string[]
+---@field prefix? string[]
+---@field fuzzy? string[] Lua patterns matched against event tags.
+---@field source? string
+
+---@class notify.Route
+---@field match? notify.RouteMatch
+---@field to notify.RouteTarget
+
+---@class notify.Options
+---@field title? string
+---@field timeout? integer|false
+---@field id? integer|string
+---@field replace? integer|string|notify.Record
+---@field icon? string
+---@field keep? boolean
+---@field hide_from_history? boolean
+---@field source? string
+---@field fidget? boolean|notify.FidgetConfig
+---@field lsp_progress? boolean
+---@field routes? notify.Route[]
+---@field max_width? number
+---@field min_width? integer
+---@field max_height? number
+---@field margin? table
+---@field padding? integer
+---@field gap? integer
+---@field border? string|string[]
+---@field top_down? boolean
+---@field max_history? integer
+---@field max_queue? integer
+---@field animate? boolean
+---@field animation? table
+---@field notify? boolean
+---@field render? fun(buf: integer, record: notify.Record, hl: table, config: table): any
+---@field on_open? fun(win: integer, record: notify.Record)
+---@field on_close? fun(win: integer, record: notify.Record)
+---@field keep? boolean|fun(): boolean
+
+---@class notify.Record
+---@field id integer
+---@field level string
+---@field level_name string
+---@field level_value integer
+---@field title string
+---@field message string[]
+---@field time number
+---@field hide_from_history? boolean
+---@field state? string
+---@field icon? string
+---@field timeout? integer|false
+---@field user_id? integer|string
+---@field created number
+---@field closed boolean
+---@field queued? boolean
+---@field keep? boolean|fun(): boolean
+---@field timer? integer|uv_timer_t
+---@field win? table
+---@field namespace? integer
+---@field on_open? fun(win: integer, record: notify.Record)
+---@field on_close? fun(win: integer, record: notify.Record)
+---@field custom_render? fun(buf: integer, record: notify.Record, hl: table, config: table)
+
+---@class notify.BusMessage
+---@field id integer
+---@field tag string
+---@field level integer
+---@field content any
+---@field data? table
+---@field timestamp number
+---@field meta notify.BusMeta
+
+---@class notify.InternalConfig: notify.Options
+---@field timeout integer
+---@field max_width number
+---@field min_width integer
+---@field max_height number
+---@field margin { top: integer, right: integer, bottom: integer }
+---@field padding integer
+---@field gap integer
+---@field top_down boolean
+---@field max_history integer
+---@field max_queue integer
+---@field animation table
+---@field icons table<string, string>
+---@field max_width_value integer
+---@field max_height_value integer
+---@field minimum_width fun(): integer
+
+---@class notify.Module
+---@field _history notify.Record[]
+---@field _notifications table<integer, notify.Record>
+---@field _ids table<integer|string, integer>
+---@field _next_id integer
+---@field _bus_records table<integer, notify.Record>
+---@field _queue notify.Record[]
+
+---@type notify.Module
 local M = { _history = {}, _notifications = {}, _ids = {}, _next_id = 0, _bus_records = {}, _queue = {} }
 local Bus = require("notify.bus")
 local Fidget = require("notify.fidget")
 local LspProgress = require("notify.lsp")
-
-local LEVELS = {
-	TRACE = { value = vim.log.levels.TRACE or 0, icon = "·" },
-	DEBUG = { value = vim.log.levels.DEBUG, icon = "󰃤" },
-	INFO = { value = vim.log.levels.INFO, icon = "󰋼" },
-	WARN = { value = vim.log.levels.WARN, icon = "󰀪" },
-	ERROR = { value = vim.log.levels.ERROR, icon = "󰅚" },
-}
+local LEVELS = require("notify.levels")
 
 local defaults = {
 	timeout = 3000,
@@ -35,15 +130,20 @@ local defaults = {
 	lsp_progress = false,
 }
 
+---@type notify.InternalConfig
 local config = vim.deepcopy(defaults)
+---@type fun(opts: table): any
 local Win
+---@type fun(from: number, to: number, callback: fun(value: number, ctx?: { done?: boolean }), opts?: table): any
 local Animate
 local original_notify
 
+---@return number
 local function now()
 	return vim.uv and vim.uv.now() or vim.loop.now()
 end
 
+---@param timer? integer|uv_timer_t
 local function stop_timer(timer)
 	if not timer then
 		return
@@ -56,19 +156,24 @@ local function stop_timer(timer)
 	pcall(timer.close, timer)
 end
 
+---@param level? notify.Level
+---@return notify.LevelInfo, string
 local function level_info(level)
 	if type(level) == "string" then
 		local name = level:upper()
-		return LEVELS[name] or LEVELS.INFO, LEVELS[name] and name or "INFO"
+		local info = LEVELS[name]
+		return type(info) == "table" and info or LEVELS.INFO, type(info) == "table" and name or "INFO"
 	end
 	for name, info in pairs(LEVELS) do
-		if info.value == level then
+		if type(info) == "table" and info.value == level then
 			return info, name
 		end
 	end
 	return LEVELS.INFO, "INFO"
 end
 
+---@param message? string|string[]|table[]
+---@return string[]
 local function make_lines(message)
 	if type(message) == "table" then
 		local lines = {}
@@ -83,6 +188,9 @@ local function make_lines(message)
 	return vim.split(tostring(message), "\n", { plain = true })
 end
 
+---@param title? string|string[]
+---@param fallback string
+---@return string
 local function title_text(title, fallback)
 	if type(title) == "table" then
 		return tostring(title[1] or fallback)
@@ -90,15 +198,21 @@ local function title_text(title, fallback)
 	return tostring(title or fallback)
 end
 
+---@param value number
+---@param parent integer
+---@return integer
 local function dimension(value, parent)
 	return math.floor(value < 1 and parent * value or value)
 end
 
+---@return nil
 local function refresh_dimensions()
 	config.max_width_value = dimension(config._max_width, vim.o.columns)
 	config.max_height_value = dimension(config._max_height, vim.o.lines)
 end
 
+---@param record notify.Record
+---@return integer width, integer height
 local function dimensions(record)
 	refresh_dimensions()
 	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
@@ -114,6 +228,7 @@ local function dimensions(record)
 	return width, math.max(1, math.min(height, config.max_height_value))
 end
 
+---@param record notify.Record
 local function set_buffer(record)
 	local win = record.win
 	if not win or not win:valid() then
@@ -151,6 +266,7 @@ local function set_buffer(record)
 	end
 end
 
+---@return notify.Record[]
 local function visible()
 	local result = {}
 	for _, record in pairs(M._notifications) do
@@ -164,6 +280,7 @@ local function visible()
 	return result
 end
 
+---@return table<integer, integer>
 local function row_positions()
 	local rows = {}
 	local row = config.top_down and config.margin.top or 0
@@ -210,6 +327,7 @@ local function layout()
 	end
 end
 
+---@param record notify.Record
 local function render(record)
 	local width, height = dimensions(record)
 	local level = record.level_name
@@ -296,6 +414,7 @@ local function render(record)
 	end
 end
 
+---@type fun(record: notify.Record, animate: boolean)
 local close
 
 local function show_queued()
@@ -320,6 +439,8 @@ local function show_queued()
 	end
 end
 
+---@param record notify.Record
+---@param animate boolean
 close = function(record, animate)
 	if record.closed then
 		return
@@ -368,10 +489,14 @@ close = function(record, animate)
 	show_queued()
 end
 
+---@param ref? integer|string|notify.Record
+---@return integer|string|nil
 local function normalize_id(ref)
 	return type(ref) == "table" and ref.id or ref
 end
 
+---@param ref? integer|string|notify.Record
+---@return notify.Record|nil
 local function find_record(ref)
 	if ref == nil then
 		return nil
@@ -380,6 +505,12 @@ local function find_record(ref)
 	return M._notifications[M._ids[id]] or M._notifications[id]
 end
 
+---@param message? string|string[]|table[]
+---@param level? notify.Level
+---@param opts? notify.Options
+---@param source string
+---@param reserved_id? integer
+---@return notify.Record
 local function notify_impl(message, level, opts, source, reserved_id)
 	opts = opts or {}
 	local info, level_name = level_info(level or vim.log.levels.INFO)
@@ -488,6 +619,10 @@ local function notify_impl(message, level, opts, source, reserved_id)
 	return record
 end
 
+---@param message? string|string[]|table[]
+---@param level? notify.Level
+---@param opts? notify.Options
+---@return notify.Record|{ id: integer }
 local function notify(message, level, opts)
 	local meta = { level_provided = level ~= nil }
 	if vim.in_fast_event() then
@@ -511,6 +646,8 @@ local function notify(message, level, opts)
 	return record or { id = bus_id }
 end
 
+---@param opts? notify.Options
+---@return table
 function M.setup(opts)
 	config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
 	local configured_render = config.render
@@ -589,10 +726,20 @@ function M.setup(opts)
 	return M
 end
 
+---@param message string|string[]
+---@param level? notify.Level
+---@param opts? notify.Options
+---@return notify.Record|{ id: integer }
 function M.notify(message, level, opts)
 	return notify(message, level, opts)
 end
 
+---@param tag string
+---@param level? notify.Level
+---@param content any
+---@param data? table
+---@param meta? table
+---@return integer
 function M.emit(tag, level, content, data, meta)
 	meta = vim.tbl_extend("force", meta or {}, { level_provided = level ~= nil, fast = vim.in_fast_event() })
 	local id = Bus.emit(tag, level, content, data, meta)
@@ -601,21 +748,25 @@ function M.emit(tag, level, content, data, meta)
 	return record and record.id or id
 end
 
+---@param id string
+---@param interested? notify.RouteMatch
+---@param min_level? notify.Level
+---@param handler fun(message: notify.BusMessage)
+---@param backend? string
+---@return fun()
 function M.subscribe(id, interested, min_level, handler, backend)
 	return Bus.subscribe(id, interested, min_level, handler, backend)
 end
 
-function M.send(message, level, opts)
-	opts = vim.tbl_extend("force", opts or {}, { source = "notify.send" })
-	return notify(message, level, opts)
-end
-
 M.fidget = Fidget
 
+---@param id string
 function M.unsubscribe(id)
 	return Bus.unsubscribe(id)
 end
 
+---@param opts? { include_hidden?: boolean }
+---@return notify.Record[]
 function M.history(opts)
 	opts = opts or {}
 	return vim.tbl_filter(function(record)
@@ -627,6 +778,7 @@ function M.clear_history()
 	M._history = {}
 end
 
+---@param opts? { pending?: boolean }
 function M.dismiss(opts)
 	opts = opts or {}
 	for _, record in ipairs(vim.tbl_values(M._notifications)) do
@@ -637,12 +789,18 @@ function M.dismiss(opts)
 	end
 end
 
+---@param opts? notify.FidgetConfig
+---@return boolean
 function M.setup_progress(opts)
 	Fidget.setup(opts, Animate)
 	LspProgress.setup(Fidget)
 	return true
 end
 
+---@param message string|string[]
+---@param level? notify.Level
+---@param opts? notify.Options
+---@return notify.Record|{ id: integer }
 function M.send(message, level, opts)
 	opts = vim.tbl_extend("force", opts or {}, { source = "notify.send" })
 	return notify(message, level, opts)

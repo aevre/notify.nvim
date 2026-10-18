@@ -1,9 +1,15 @@
+---@class notify.FidgetBackend
+---@field progress fun(message: string, opts: notify.FidgetProgressOpts): string
+
 local M = {}
 local group_name = "notify_lsp_progress"
+local fidget
 
-function M.setup(fidget)
+---@param backend? notify.FidgetBackend
+---@return integer augroup_id
+function M.setup(backend)
 	M.restore()
-	fidget = fidget or require("notify.fidget")
+	fidget = backend or require("notify.fidget")
 	local group = vim.api.nvim_create_augroup(group_name, { clear = true })
 	vim.api.nvim_create_autocmd("LspProgress", {
 		group = group,
@@ -15,14 +21,17 @@ function M.setup(fidget)
 			if not client or type(value) ~= "table" then
 				return
 			end
-			fidget.progress(value.message or value.title or "", {
+			local opts = {
 				client_id = client.id,
 				token = params.token,
 				kind = value.kind,
 				title = value.title,
 				percentage = value.percentage,
-				icon = value.icon,
-			})
+				level = "none",
+				spinner_frames = { "", "", "", "", "", "" },
+			}
+			opts.spinner = value.kind ~= "end" and true
+			fidget.progress(value.message or value.title or "", opts)
 		end,
 	})
 	return group
