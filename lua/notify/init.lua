@@ -478,7 +478,7 @@ local function render(record)
 			end,
 		})
 		record.win = win
-		if config.stages == "fade_in_slide_out" or config.stages == "fade" then
+		if config.stages == "fade" then
 			win.opts.wo = win.opts.wo or {}
 			win.opts.wo.winblend = 95
 		end
@@ -492,8 +492,8 @@ local function render(record)
 					local current_width = math.floor(value + 0.5)
 					win.opts.width = current_width
 					win.opts.col = vim.o.columns - config.margin.right - current_width
-					if ctx and ctx.done and (config.stages == "fade_in_slide_out" or config.stages == "fade") then
-						win.opts.wo.winblend = config.stages == "fade" and 95 or 5
+					if ctx and ctx.done and config.stages == "fade" then
+						win.opts.wo.winblend = 95
 					end
 					win:update()
 					redraw_now(win.win)
