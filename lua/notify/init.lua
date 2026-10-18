@@ -612,7 +612,14 @@ render_progress = function(opts)
 	local tasks = {}
 	for _, task in pairs(progress) do
 		local percentage = task.percentage and (" %d%%"):format(task.percentage) or ""
-		tasks[#tasks + 1] = task.title .. percentage .. (task.message and ("\n  " .. task.message) or "")
+		local title = vim.split(tostring(task.title or "Working"), "\n", { plain = true })
+		title[1] = title[1] .. percentage
+		vim.list_extend(tasks, title)
+		if task.message and task.message ~= "" then
+			for _, line in ipairs(vim.split(tostring(task.message), "\n", { plain = true })) do
+				tasks[#tasks + 1] = "  " .. line
+			end
+		end
 	end
 	table.sort(tasks)
 	if #tasks == 0 then
