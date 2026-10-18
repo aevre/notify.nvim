@@ -17,7 +17,7 @@
 ---@field id? integer|string
 ---@field replace? integer|string|notify.Record
 ---@field icon? string
----@field keep? boolean
+---@field keep? boolean|fun(): boolean
 ---@field hide_from_history? boolean
 ---@field source? string
 ---@field fidget? boolean|notify.FidgetConfig
@@ -26,6 +26,7 @@
 ---@field max_width? number
 ---@field min_width? integer
 ---@field max_height? number
+---@field minimum_width? fun(): integer
 ---@field margin? table
 ---@field padding? integer
 ---@field gap? integer
@@ -38,17 +39,16 @@
 ---@field notify? boolean
 ---@field style? string Built-in renderer name.
 ---@field stages? string|table|fun():string Animation stage name or phase selector.
----@field render? string|fun(buf: integer, record: notify.Record, hl: table, config: table): any
+---@field render? fun(buf: integer, record: notify.Record, hl: table, config: table): any
 ---@field on_open? fun(win: integer, record: notify.Record)
 ---@field on_close? fun(win: integer, record: notify.Record)
----@field keep? boolean|fun(): boolean
 
 ---@class notify.Record
 ---@field id integer
 ---@field level string
 ---@field level_name string
 ---@field level_value integer
----@field title string
+---@field title string[]
 ---@field message string[]
 ---@field time number
 ---@field hide_from_history? boolean
@@ -60,8 +60,8 @@
 ---@field closed boolean
 ---@field queued? boolean
 ---@field keep? boolean|fun(): boolean
----@field timer? integer|uv_timer_t
----@field win? table
+---@field timer? integer|uv.uv_timer_t
+---@field win? win
 ---@field namespace? integer
 ---@field custom_render? fun(buf: integer, record: notify.Record, hl: table, config: table)
 ---@field on_open? fun(win: integer, record: notify.Record)
@@ -92,6 +92,8 @@
 ---@field stages any
 ---@field render fun():fun(buf: integer, record: notify.Record)
 ---@field icons table<string, string>
+---@field _max_width number
+---@field _max_height number
 ---@field max_width_value integer
 ---@field max_height_value integer
 ---@field minimum_width fun(): integer
@@ -103,14 +105,28 @@
 ---@field _next_id integer
 ---@field _bus_records table<integer, notify.Record>
 ---@field _queue notify.Record[]
+---@field setup fun(opts?: notify.Options): notify.Module
+---@field notify fun(message: string|string[], level?: notify.Level, opts?: notify.Options): notify.Record|{ id: integer }
+---@field emit fun(tag: string, level: notify.Level?, content: any, data?: table, meta?: table): integer
+---@field subscribe fun(id: string, interested: notify.RouteMatch?, min_level: notify.Level?, handler: fun(message: notify.BusMessage), backend?: string): fun()
+---@field unsubscribe fun(id: string)
+---@field fidget table
+---@field bus table
+---@field history fun(opts?: { include_hidden?: boolean }): notify.Record[]
+---@field clear_history fun()
+---@field dismiss fun(opts?: { pending?: boolean })
+---@field setup_progress fun(opts?: notify.FidgetConfig): boolean
+---@field send fun(message: string|string[], level?: notify.Level, opts?: notify.Options): notify.Record|{ id: integer }
+---@field restore fun()
 
----@type notify.Module
+---@class notify.Module
 local M = { _history = {}, _notifications = {}, _ids = {}, _next_id = 0, _bus_records = {}, _queue = {} }
 local Bus = require("notify.bus")
 local Fidget = require("notify.fidget")
 local LspProgress = require("notify.lsp")
 local LEVELS = require("notify.levels")
 local text = require("notify.text")
+local util = require("notify.util")
 
 local defaults = {
 	timeout = 3000,
@@ -134,29 +150,15 @@ local defaults = {
 
 ---@type notify.InternalConfig
 local config = vim.deepcopy(defaults)
----@type fun(opts: table): any
+local configured_max_width = defaults.max_width
+local configured_max_height = defaults.max_height
+---@type table
+local renderer_config
+---@type win
 local Win
----@type fun(from: number, to: number, callback: fun(value: number, ctx?: { done?: boolean }), opts?: table): any
+---@type animate
 local Animate
 local original_notify
-
----@return number
-local function now()
-	return vim.uv and vim.uv.now() or vim.loop.now()
-end
-
----@param timer? integer|uv_timer_t
-local function stop_timer(timer)
-	if not timer then
-		return
-	end
-	if type(timer) == "number" then
-		pcall(vim.fn.timer_stop, timer)
-		return
-	end
-	pcall(timer.stop, timer)
-	pcall(timer.close, timer)
-end
 
 ---@param level? notify.Level
 ---@return notify.LevelInfo, string
@@ -209,8 +211,8 @@ end
 
 ---@return nil
 local function refresh_dimensions()
-	config.max_width_value = dimension(config._max_width, vim.o.columns)
-	config.max_height_value = dimension(config._max_height, vim.o.lines)
+	config.max_width_value = dimension(configured_max_width, vim.o.columns)
+	config.max_height_value = dimension(configured_max_height, vim.o.lines)
 end
 
 ---@param record notify.Record
@@ -291,30 +293,16 @@ local function set_buffer(record, target_width)
 	text.highlight(win.buf, record.namespace, #lines)
 	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
 	if config.style == "simple" or config.style == "minimal" or config.style == "default" then
-		vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Icon", 0, 0, #icon)
+		util.highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Icon", 0, 0, #icon)
 	end
 	if config.style == "default" or config.style == "wrapped-default" then
-		vim.api.nvim_buf_add_highlight(
-			win.buf,
-			record.namespace,
-			"Notify" .. record.level_name .. "Separator",
-			1,
-			0,
-			-1
-		)
+		util.highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Separator", 1, 0, #lines[2])
 	end
 	local body_start = (config.style == "default" or config.style == "wrapped-default" or config.style == "compact")
 			and 2
 		or 0
 	for line = body_start, #lines - 1 do
-		vim.api.nvim_buf_add_highlight(
-			win.buf,
-			record.namespace,
-			"Notify" .. record.level_name .. "Message",
-			line,
-			0,
-			-1
-		)
+		util.highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Message", line, 0, #lines[line + 1])
 	end
 end
 
@@ -452,7 +440,7 @@ local function render(record)
 				record.win = nil
 				if not record.closed then
 					record.closed = true
-					stop_timer(record.timer)
+					util.stop_timer(record.timer)
 					record.timer = nil
 					M._notifications[record.id] = nil
 					if record.user_id ~= nil and M._ids[record.user_id] == record.id then
@@ -467,7 +455,8 @@ local function render(record)
 		})
 		record.win = win
 		if config.stages == "fade_in_slide_out" or config.stages == "fade" then
-			win.opts.winblend = 95
+			win.opts.wo = win.opts.wo or {}
+			win.opts.wo.winblend = 95
 		end
 		set_buffer(record, width)
 		if record.on_open then
@@ -512,7 +501,7 @@ local function show_queued()
 			record.queued = false
 			render(record)
 			if record.custom_render then
-				render_custom(record.win.buf, record.custom_render, record, {}, config)
+				render_custom(record.win.buf, record.custom_render, record, {}, renderer_config)
 			end
 			record.timer = record.timeout ~= false
 					and record.timeout ~= 0
@@ -547,10 +536,10 @@ close = function(record, animate)
 		return
 	end
 	record.closed = true
-	stop_timer(record.timer)
+	util.stop_timer(record.timer)
 	record.timer = nil
-	if record.win and record.win:valid() then
-		local win = record.win
+	local win = record.win
+	if win and win:valid() then
 		if animate and Animate and animation_enabled("close") then
 			local from = win.opts.width or dimensions(record)
 			Animate(from, 1, function(value, ctx)
@@ -559,7 +548,7 @@ close = function(record, animate)
 					win.opts.width = current_width
 					win.opts.col = vim.o.columns - config.margin.right - current_width
 					win:update()
-					if ctx.done then
+					if ctx and ctx.done then
 						win:close()
 					end
 				end
@@ -579,7 +568,13 @@ end
 ---@param ref? integer|string|notify.Record
 ---@return integer|string|nil
 local function normalize_id(ref)
-	return type(ref) == "table" and ref.id or ref
+	if ref == nil then
+		return nil
+	elseif type(ref) == "table" then
+		return ref.id
+	elseif type(ref) == "string" or type(ref) == "number" then
+		return ref
+	end
 end
 
 ---@param ref? integer|string|notify.Record
@@ -619,7 +614,7 @@ local function notify_impl(message, level, opts, source, reserved_id)
 			M._ids[user_id] = old.id
 		end
 		old.closed = true
-		stop_timer(old.timer)
+		util.stop_timer(old.timer)
 		old.timer = nil
 		old.message = make_lines(message)
 		old.level, old.level_name, old.level_value = level_name, level_name, info.value
@@ -634,14 +629,14 @@ local function notify_impl(message, level, opts, source, reserved_id)
 			old.keep = opts.keep
 		end
 		old.closed = false
-		old.created = now()
+		old.created = util.now()
 		old.on_open, old.on_close = opts.on_open or old.on_open, opts.on_close or old.on_close
 		if old.queued then
 			return old
 		end
 		render(old)
 		if opts.render then
-			render_custom(old.win.buf, opts.render, old, {}, config)
+			render_custom(old.win.buf, opts.render, old, {}, renderer_config)
 		end
 		old.timer = old.timeout ~= false
 				and old.timeout ~= 0
@@ -675,7 +670,7 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		on_close = opts.on_close,
 		hide_from_history = opts.hide_from_history,
 		custom_render = opts.render,
-		created = now(),
+		created = util.now(),
 		closed = false,
 	}
 	M._history[#M._history + 1] = record
@@ -692,13 +687,8 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		M._queue[#M._queue + 1] = record
 	else
 		render(record)
-		local renderer = opts.render
-		if type(renderer) == "string" then
-			local ok, value = pcall(renderer)
-			renderer = ok and value or nil
-		end
-		if type(renderer) == "function" then
-			render_custom(record.win.buf, renderer, record, {}, config)
+		if opts.render then
+			render_custom(record.win.buf, opts.render, record, {}, renderer_config)
 		end
 		record.timer = opts.timeout ~= false
 				and opts.timeout ~= 0
@@ -742,18 +732,28 @@ end
 ---@return table
 function M.setup(opts)
 	config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
-	config._max_width = config.max_width
-	config._max_height = config.max_height
+	if type(config.max_width) == "number" then
+		configured_max_width = config.max_width
+	else
+		configured_max_width = defaults.max_width
+	end
+	if type(config.max_height) == "number" then
+		configured_max_height = config.max_height
+	else
+		configured_max_height = defaults.max_height
+	end
 	refresh_dimensions()
-	config.minimum_width = function()
-		return config.min_width
-	end
-	config.max_width = function()
-		return config.max_width_value
-	end
-	config.max_height = function()
-		return config.max_height_value
-	end
+	renderer_config = vim.tbl_extend("force", {}, config, {
+		minimum_width = function()
+			return config.min_width
+		end,
+		max_width = function()
+			return config.max_width_value
+		end,
+		max_height = function()
+			return config.max_height_value
+		end,
+	})
 	Win = require("win")
 	Animate = require("animate")
 	Fidget.restore()
@@ -765,6 +765,7 @@ function M.setup(opts)
 		{ exact = { "notify" }, prefix = { "msg.show." } },
 		vim.log.levels.TRACE,
 		function(message)
+			---@type integer|nil
 			local level = message.level
 			if message.tag == "notify" and not message.meta.level_provided then
 				level = nil
