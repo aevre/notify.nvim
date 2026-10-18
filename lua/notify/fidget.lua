@@ -76,8 +76,24 @@ local progress = {}
 local current_opts = {}
 ---@type integer|nil
 local render_timer, spinner_timer
+local redraw_pending = false
 ---@type animate|nil
 local Animate
+
+local function redraw()
+	if redraw_pending then
+		return
+	end
+	redraw_pending = true
+	vim.schedule(function()
+		redraw_pending = false
+		if vim.api.nvim__redraw then
+			vim.api.nvim__redraw({ flush = true, cursor = false })
+		else
+			vim.cmd("redraw!")
+		end
+	end)
+end
 local next_message_id = 0
 local history = {}
 local spinner_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
@@ -224,7 +240,7 @@ local function layout()
 				if task.win and task.win:valid() then
 					task.win.opts.row = math.floor(value + 0.5)
 					task.win:update()
-					vim.cmd("redraw!")
+					redraw()
 				end
 			end, vim.tbl_extend("force", opts.animation or {}, { int = true, id = "notify:fidget:" .. item.key }))
 		else
@@ -232,7 +248,7 @@ local function layout()
 		end
 		task.win:update()
 	end
-	vim.cmd("redraw!")
+	redraw()
 end
 
 local function refresh_spinner()
@@ -275,6 +291,7 @@ end
 local function render()
 	if not next(progress) then
 		clear()
+		redraw()
 		return
 	end
 	layout()
@@ -421,11 +438,13 @@ function M.progress(message, opts)
 		if message and message ~= "" then
 			task.history.message = vim.split(tostring(message), "\n", { plain = true })
 		end
-		if task.win then
-			task.win:close()
-		end
 		progress[key] = nil
-		render()
+		vim.schedule(function()
+			if task.win then
+				task.win:close()
+			end
+			render()
+		end)
 		return key
 	end
 	local previous = progress[key] or {}

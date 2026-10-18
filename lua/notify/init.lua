@@ -152,6 +152,27 @@ local defaults = {
 local config = vim.deepcopy(defaults)
 local configured_max_width = defaults.max_width
 local configured_max_height = defaults.max_height
+
+local redraw_pending = false
+local function redraw_now(win)
+	if vim.api.nvim__redraw then
+		vim.api.nvim__redraw({ win = win, flush = true, cursor = false })
+	else
+		vim.cmd("redraw!")
+	end
+end
+
+local function redraw()
+	if redraw_pending then
+		return
+	end
+	redraw_pending = true
+	vim.schedule(function()
+		redraw_pending = false
+		redraw_now()
+	end)
+end
+
 ---@type table
 local renderer_config
 ---@type win
@@ -310,7 +331,7 @@ end
 local function visible()
 	local result = {}
 	for _, record in pairs(M._notifications) do
-		if record.win and record.win:valid() then
+		if not record.closed and record.win and record.win:valid() then
 			result[#result + 1] = record
 		end
 	end
@@ -380,6 +401,7 @@ local function layout()
 					if record.win and record.win:valid() then
 						record.win.opts.row = math.floor(value + 0.5)
 						record.win:update()
+						redraw_now(record.win.win)
 					end
 				end, animation_opts("notify:row:" .. record.id))
 			else
@@ -418,7 +440,7 @@ local function render(record)
 			height = height,
 			border = config.border,
 			backdrop = false,
-			zindex = 80,
+			zindex = 250,
 			enter = false,
 			focusable = false,
 			style = "minimal",
@@ -433,6 +455,7 @@ local function render(record)
 				winhighlight = table.concat({
 					"Normal:Notify" .. level .. "Body",
 					"NormalNC:Notify" .. level .. "Body",
+					"EndOfBuffer:Notify" .. level .. "Body",
 					"FloatBorder:Notify" .. level .. "Border",
 					"FloatTitle:Notify" .. level .. "Title",
 				}, ","),
@@ -470,6 +493,7 @@ local function render(record)
 					win.opts.width = current_width
 					win.opts.col = vim.o.columns - config.margin.right - current_width
 					win:update()
+					redraw_now(win.win)
 				end
 			end, animation_opts("notify:width:" .. record.id))
 		end
@@ -479,6 +503,7 @@ local function render(record)
 		win.opts.wo.winhighlight = table.concat({
 			"Normal:Notify" .. level .. "Body",
 			"NormalNC:Notify" .. level .. "Body",
+			"EndOfBuffer:Notify" .. level .. "Body",
 			"FloatBorder:Notify" .. level .. "Border",
 			"FloatTitle:Notify" .. level .. "Title",
 		}, ",")
@@ -489,6 +514,7 @@ local function render(record)
 		record.win.opts.row = row
 		record.win:update()
 	end
+	redraw()
 end
 
 ---@type fun(record: notify.Record, animate: boolean)
@@ -549,6 +575,7 @@ close = function(record, animate)
 					win.opts.width = current_width
 					win.opts.col = vim.o.columns - config.margin.right - current_width
 					win:update()
+					redraw_now(win.win)
 					if ctx and ctx.done then
 						win:close()
 					end
@@ -564,6 +591,7 @@ close = function(record, animate)
 	end
 	layout()
 	show_queued()
+	redraw()
 end
 
 ---@param ref? integer|string|notify.Record

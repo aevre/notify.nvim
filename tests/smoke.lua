@@ -39,17 +39,25 @@ check(first.id and first.level == "INFO", "notification record shape")
 check(first.message[1] == "first message", "notification message")
 check(first.title[1] == "Smoke", "notification title")
 check(first.win and not first.win.backdrop, "notifications do not create a backdrop")
+check(vim.api.nvim_win_get_config(first.win.win).zindex > 200, "notifications stay above cmdline floats")
 check(notify.history()[1] == first, "notification history")
 local visual = vim.notify("**body line 1**\nbody line 2", vim.log.levels.ERROR, { timeout = false })
 local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)
 check(vim.bo[visual.win.buf].filetype == "markdown", "notification buffers use Markdown highlights")
 check(vim.wo[visual.win.win].conceallevel == 0, "Markdown syntax markers remain visible")
+check(
+	vim.wo[visual.win.win].winhighlight:find("EndOfBuffer:NotifyERRORBody", 1, true),
+	"buffer-end rows use notification background"
+)
 check(visual_lines[3]:find("**body line 1**", 1, true), "Markdown markers remain visible")
 local markdown_marks = vim.api.nvim_buf_get_extmarks(visual.win.buf, visual.namespace, 0, -1, { details = true })
 check(
-	vim.tbl_contains(vim.tbl_map(function(mark)
-		return mark[4].hl_group
-	end, markdown_marks), "@markup.strong.markdown_inline"),
+	vim.tbl_contains(
+		vim.tbl_map(function(mark)
+			return mark[4].hl_group
+		end, markdown_marks),
+		"@markup.strong.markdown_inline"
+	),
 	"Markdown syntax receives extmark highlights"
 )
 check(#visual_lines == 4 and visual_lines[2]:find("━", 1, true), "notification title separator")
@@ -176,6 +184,19 @@ check(routed == 2, "source and tag routing")
 remove_routed()
 notify.setup({ animate = false, lsp_progress = true })
 check(autocmd_count() > 0, "lsp progress setup")
+local original_termguicolors = vim.o.termguicolors
+local original_normal = vim.api.nvim_get_hl(0, { name = "Normal" })
+vim.o.termguicolors = true
+vim.api.nvim_set_hl(0, "Normal", { bg = "#202020" })
+local terminal = require("win")({
+	position = "float",
+	width = 20,
+	height = 5,
+	zindex = 50,
+	bo = { filetype = "core_terminal" },
+})
+check(terminal.backdrop and terminal.backdrop:valid(), "opaque terminal float creates a backdrop")
+local terminal_backdrop = terminal.backdrop.win
 local fidget = require("notify.fidget")
 fidget.clear_history()
 fidget.notify("Build finished", { title = "Build", icon = "✓", timeout = 100 })
@@ -190,9 +211,6 @@ local token = fidget.progress("building", {
 })
 check(token == "7:single-line", "fidget progress API identifies task")
 check(#fidget.history() == 2 and fidget.history()[2].state == "active", "fidget progress history")
-for _, task in pairs(fidget._progress or {}) do
-	check(not task.win or not task.win.backdrop, "fidget windows do not create a backdrop")
-end
 check(require("notify.levels").name(vim.log.levels.WARN) == "WARN", "shared level metadata")
 local fidget_win
 vim.wait(250, function()
@@ -222,6 +240,12 @@ vim.wait(150, function()
 	return #fidget_wins == 2
 end, 10)
 check(#fidget_wins == 2, "fidget stacks concurrent task windows")
+check(terminal:valid() and vim.api.nvim_win_is_valid(terminal_backdrop), "fidget leaves terminal visible")
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+	if vim.bo[vim.api.nvim_win_get_buf(win)].filetype == "win_backdrop" then
+		check(win == terminal_backdrop, "fidget does not cover terminal with a backdrop")
+	end
+end
 local namespace = vim.api.nvim_get_namespaces()["notify-progress"]
 local has_level_highlight = false
 for _, win in ipairs(fidget_wins) do
@@ -302,6 +326,9 @@ vim.api.nvim_exec_autocmds("LspProgress", {
 })
 vim.lsp.get_client_by_id = original_get_client
 fidget.dismiss()
+terminal:close()
+vim.api.nvim_set_hl(0, "Normal", original_normal)
+vim.o.termguicolors = original_termguicolors
 check(#notify.history({ include_hidden = true }) == history_before_progress, "progress outside notification history")
 check(fidget.history()[2].state == "dismissed", "fidget dismissal updates history")
 fidget.clear_history()
