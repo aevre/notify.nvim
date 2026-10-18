@@ -58,9 +58,9 @@ require("notify").setup({
 | `top_down` | `true` | Stack notifications from the top when true. |
 | `max_history` | `200` | Number of records retained in history. |
 | `animate` | `true` | Use animate.nvim for stacking and slide transitions. |
-| `lsp_progress` | `false` | Display `LspProgress` events in a dedicated borderless bottom-right float, outside notification history. |
+| `lsp_progress` | `false` | Enable the separate `notify.fidget` bus backend for LSP progress in a full-width, borderless bottom-right float, outside notification history. |
 
-The default layout follows the compact nvim-notify/Snacks style: each notification has a severity-colored title row, a separator, and highlighted message content inside a bordered window. Notifications stack at the top-right and slide in from the right with animate.nvim; width and height may be fractional editor limits. LSP progress is rendered separately as a borderless bottom-right float and is not added to notification history.
+The default layout follows the compact nvim-notify/Snacks style: each notification has a severity-colored title row, a separator, and highlighted message content inside a bordered window. Notifications stack at the top-right and slide in from the right with animate.nvim; width and height may be fractional editor limits. LSP progress is a separate `notify.fidget` bus backend: it consumes only `lsp.progress.*`, renders a full-width borderless bottom-right float with spinner, task, message, and percentage highlights, and is not added to notification history.
 
 Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. The `render` callback follows Noice's four-argument callback contract and receives a config with `render()`, `minimum_width()`, `max_width()`, and `max_height()` helpers. Set `timeout = false` for a persistent notification. Reuse `id` or pass `replace = record` to update an existing notification.
 

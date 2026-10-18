@@ -1,5 +1,7 @@
 local M = { _history = {}, _notifications = {}, _ids = {}, _next_id = 0, _bus_records = {} }
 local Bus = require("notify.bus")
+local Fidget = require("notify.fidget")
+local LspProgress = require("notify.lsp")
 
 local LEVELS = {
 	TRACE = { value = vim.log.levels.TRACE or 0, icon = "·" },
@@ -36,14 +38,6 @@ local config = vim.deepcopy(defaults)
 local Win
 local Animate
 local original_notify
-local progress = {}
-local progress_win
-local progress_timer
-local progress_spinner_timer
-local progress_done_timer
-local progress_group = "notify_lsp_progress"
-local progress_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
-local render_progress
 
 local function now()
 	return vim.uv and vim.uv.now() or vim.loop.now()
@@ -494,18 +488,8 @@ function M.setup(opts)
 	end
 	Win = require("win")
 	Animate = require("animate")
-	pcall(vim.api.nvim_del_augroup_by_name, progress_group)
-	progress = {}
-	stop_timer(progress_timer)
-	progress_timer = nil
-	stop_timer(progress_spinner_timer)
-	progress_spinner_timer = nil
-	stop_timer(progress_done_timer)
-	progress_done_timer = nil
-	if progress_win and progress_win:valid() then
-		progress_win:close()
-	end
-	progress_win = nil
+	Fidget.restore()
+	LspProgress.restore()
 	Bus.unsubscribe("notify.nvim")
 	Bus.subscribe(
 		"notify.nvim",
@@ -539,8 +523,8 @@ function M.setup(opts)
 			for _, record in ipairs(visible()) do
 				render(record)
 			end
-			if config.lsp_progress and next(progress) then
-				render_progress(config.lsp_progress == true and {} or config.lsp_progress)
+			if config.lsp_progress then
+				Fidget.resize(config.lsp_progress == true and {} or config.lsp_progress)
 			end
 		end,
 	})
@@ -594,147 +578,13 @@ function M.dismiss(opts)
 		close(record, false)
 	end
 	if opts.pending then
-		progress = {}
-		stop_timer(progress_timer)
-		progress_timer = nil
-		stop_timer(progress_spinner_timer)
-		progress_spinner_timer = nil
-		stop_timer(progress_done_timer)
-		progress_done_timer = nil
-		if progress_win and progress_win:valid() then
-			progress_win:close()
-		end
-		progress_win = nil
+		Fidget.dismiss()
 	end
-end
-
-render_progress = function(opts)
-	local tasks = {}
-	for _, task in pairs(progress) do
-		local percentage = task.percentage and (" %d%%"):format(task.percentage) or ""
-		local title = vim.split(tostring(task.title or "Working"), "\n", { plain = true })
-		title[1] = title[1] .. percentage
-		vim.list_extend(tasks, title)
-		if task.message and task.message ~= "" then
-			for _, line in ipairs(vim.split(tostring(task.message), "\n", { plain = true })) do
-				tasks[#tasks + 1] = "  " .. line
-			end
-		end
-	end
-	table.sort(tasks)
-	if #tasks == 0 then
-		stop_timer(progress_spinner_timer)
-		progress_spinner_timer = nil
-		if progress_win and progress_win:valid() then
-			progress_win:close()
-		end
-		progress_win = nil
-		return false
-	end
-
-	if not progress_spinner_timer then
-		progress_spinner_timer = vim.fn.timer_start(80, function()
-			if next(progress) then
-				render_progress(opts)
-			else
-				stop_timer(progress_spinner_timer)
-				progress_spinner_timer = nil
-			end
-		end, { ["repeat"] = -1 })
-	end
-
-	local uv = vim.uv or vim.loop
-	local frame = progress_frames[math.floor(uv.hrtime() / 80000000) % #progress_frames + 1]
-	local lines = { frame .. "  " .. (opts.title or "LSP Progress") }
-	vim.list_extend(lines, tasks)
-	local width = 0
-	for _, line in ipairs(lines) do
-		width = math.max(width, vim.fn.strdisplaywidth(line))
-	end
-	width = math.min(math.max(width + 2, opts.min_width or 24), opts.max_width or 60)
-	local height = #lines
-	local row = vim.o.lines - vim.o.cmdheight - (opts.margin_bottom or 1) - height
-	local col = vim.o.columns - (opts.margin_right or 1) - width
-	if not progress_win or not progress_win:valid() then
-		progress_win = Win({
-			position = "float",
-			relative = "editor",
-			row = math.max(0, row),
-			col = math.max(0, col),
-			width = width,
-			height = height,
-			border = "none",
-			zindex = 80,
-			enter = false,
-			focusable = false,
-			style = "minimal",
-			bo = { modifiable = false, bufhidden = "wipe" },
-			wo = { wrap = false, winblend = 5, winhighlight = "Normal:NotifyINFOBody,NormalNC:NotifyINFOBody" },
-		})
-	end
-	vim.bo[progress_win.buf].modifiable = true
-	vim.api.nvim_buf_set_lines(progress_win.buf, 0, -1, false, lines)
-	vim.bo[progress_win.buf].modifiable = false
-	progress_win.opts.row, progress_win.opts.col = math.max(0, row), math.max(0, col)
-	progress_win.opts.width, progress_win.opts.height = width, height
-	progress_win:update()
-	return true
 end
 
 function M.setup_progress(opts)
-	if opts == true then
-		opts = {}
-	else
-		opts = opts or {}
-	end
-	stop_timer(progress_timer)
-	progress_timer = nil
-	stop_timer(progress_spinner_timer)
-	progress_spinner_timer = nil
-	stop_timer(progress_done_timer)
-	progress_done_timer = nil
-	if progress_win and progress_win:valid() then
-		progress_win:close()
-	end
-	progress_win = nil
-	progress = {}
-	local group = vim.api.nvim_create_augroup(progress_group, { clear = true })
-	vim.api.nvim_create_autocmd("LspProgress", {
-		group = group,
-		callback = function(event)
-			local data = event.data or {}
-			local params = data.params or {}
-			local value = params.value
-			local client = vim.lsp.get_client_by_id(data.client_id)
-			if not client or type(value) ~= "table" then
-				return
-			end
-			local key = tostring(client.id) .. ":" .. tostring(params.token)
-			local tag = "lsp.progress."
-				.. (value.kind == "begin" and "start" or value.kind == "end" and "end" or "update")
-			Bus.emit(tag, vim.log.levels.INFO, value.message or value.title or "", {
-				client = client,
-				token = params.token,
-				value = value,
-			})
-			if value.kind == "end" then
-				progress[key] = nil
-			else
-				progress[key] = {
-					title = value.title or "Working",
-					message = value.message,
-					percentage = value.percentage,
-					client = client.name,
-				}
-			end
-			stop_timer(progress_timer)
-			progress_timer = vim.defer_fn(function()
-				progress_timer = nil
-				render_progress(opts)
-			end, opts.throttle or 80)
-		end,
-	})
-	return group
+	LspProgress.setup(Bus)
+	return Fidget.setup(opts, Bus)
 end
 
 function M.restore()
@@ -742,8 +592,9 @@ function M.restore()
 		vim.notify = original_notify
 		original_notify = nil
 	end
-	pcall(vim.api.nvim_del_augroup_by_name, progress_group)
+	LspProgress.restore()
 	pcall(vim.api.nvim_del_augroup_by_name, "notify_layout")
+	Fidget.restore()
 	Bus.unsubscribe("notify.nvim")
 	M.dismiss({ pending = true })
 end

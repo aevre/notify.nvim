@@ -58,9 +58,9 @@ require("notify").setup({
 | `top_down` | `true` | 为 true 时从顶部开始堆叠通知。 |
 | `max_history` | `200` | 历史记录保留数量。 |
 | `animate` | `true` | 使用 animate.nvim 处理堆叠和滑入滑出动画。 |
-| `lsp_progress` | `false` | 将 `LspProgress` 显示在右下角无边框浮窗中，不进入通知历史。 |
+| `lsp_progress` | `false` | 启用独立的 `notify.fidget` bus 后端，在尽可能全宽的右下角无边框浮窗中显示 LSP 进度，且不进入通知历史。 |
 
-默认布局参考 nvim-notify/Snacks 的 compact 样式：每条通知都有按严重级别着色的顶部标题、分割线和高亮正文，并显示在带边框的窗口中。通知堆叠在右上角，通过 animate.nvim 从右侧滑入；宽度和高度支持编辑器尺寸比例。
+默认布局参考 nvim-notify/Snacks 的 compact 样式：每条通知都有按严重级别着色的顶部标题、分割线和高亮正文，并显示在带边框的窗口中。通知堆叠在右上角，通过 animate.nvim 从右侧滑入；宽度和高度支持编辑器尺寸比例。LSP 进度由独立的 `notify.fidget` bus 后端处理，只消费 `lsp.progress.*` 事件，在尽可能全宽的右下角无边框浮窗中显示 spinner、任务、消息和百分比高亮，并且不进入通知历史。
 
 单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。`render` 回调兼容 Noice 的四参数回调格式，并收到带有 `render()`、`minimum_width()`、`max_width()` 和 `max_height()` 辅助函数的配置对象。设置 `timeout = false` 可以让通知持续显示。重复使用 `id`，或传入 `replace = record`，可以更新已有通知。
 

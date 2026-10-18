@@ -147,6 +147,27 @@ local remove_progress = notify.subscribe(
 notify.bus.emit("lsp.progress.update", vim.log.levels.INFO, "progress", {})
 check(progress_events == 1, "lsp progress bus event")
 local history_before_progress = #notify.history({ include_hidden = true })
+local fidget = require("notify.fidget")
+check(fidget and type(fidget.dismiss) == "function", "separate fidget backend")
+local client = { id = 1, name = "smoke" }
+local original_get_client = vim.lsp.get_client_by_id
+vim.lsp.get_client_by_id = function(id)
+	return id == client.id and client or nil
+end
+vim.api.nvim_exec_autocmds("LspProgress", {
+	data = {
+		client_id = client.id,
+		params = { token = "smoke", value = { kind = "begin", title = "Index", percentage = 10 } },
+	},
+})
+check(notify.bus.dispatching == false, "fidget backend consumes progress bus event")
+vim.wait(100, function()
+	return true
+end, 10)
+vim.api.nvim_exec_autocmds("LspProgress", {
+	data = { client_id = client.id, params = { token = "smoke", value = { kind = "end" } } },
+})
+vim.lsp.get_client_by_id = original_get_client
 remove_progress()
 check(#notify.history({ include_hidden = true }) == history_before_progress, "progress outside history")
 notify.setup({ animate = false, lsp_progress = false })
