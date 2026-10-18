@@ -67,11 +67,17 @@ local function routed_to(subscriber, message)
 	for _, route in ipairs(routes) do
 		local selector = route.match or {}
 		if matches(selector, message.tag) and (not selector.source or selector.source == message.meta.source) then
-			---@type string[]
-			local targets = type(route.to) == "table" and route.to or { route.to }
-			for _, target in ipairs(targets) do
-				if target == subscriber.backend then
+			if type(route.to) == "string" then
+				if route.to == subscriber.backend then
 					return true
+				end
+			else
+				local targets = route.to
+				---@cast targets string[]
+				for _, target in ipairs(targets) do
+					if target == subscriber.backend then
+						return true
+					end
 				end
 			end
 			return false
