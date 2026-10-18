@@ -146,6 +146,36 @@ local remove_progress = notify.subscribe(
 )
 notify.bus.emit("lsp.progress.update", vim.log.levels.INFO, "progress", {})
 check(progress_events == 1, "lsp progress bus event")
+notify.bus.emit("lsp.progress.update", vim.log.levels.INFO, "indexing", {
+	client = { id = 7, name = "test" },
+	token = "single-line",
+	value = { title = "Index", message = "building", percentage = 42 },
+})
+local fidget_win
+vim.wait(250, function()
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		if vim.wo[win].winhighlight:find("NotifyProgress", 1, true) then
+			fidget_win = win
+			return true
+		end
+	end
+	return false
+end, 10)
+check(fidget_win and vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(fidget_win)) == 1, "fidget renders one line")
+local fidget_line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(fidget_win), 0, 1, false)[1]
+check(
+	fidget_line:match("^%s+⠋")
+		or fidget_line:match("^%s+⠙")
+		or fidget_line:match("^%s+⠹")
+		or fidget_line:match("^%s+⠸")
+		or fidget_line:match("^%s+⠼")
+		or fidget_line:match("^%s+⠴")
+		or fidget_line:match("^%s+⠦")
+		or fidget_line:match("^%s+⠧")
+		or fidget_line:match("^%s+⠇")
+		or fidget_line:match("^%s+⠏"),
+	"fidget content right aligned"
+)
 local history_before_progress = #notify.history({ include_hidden = true })
 local fidget = require("notify.fidget")
 check(fidget and type(fidget.dismiss) == "function", "separate fidget backend")

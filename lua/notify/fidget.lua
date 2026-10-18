@@ -38,26 +38,28 @@ local function clear()
 	close_window()
 end
 
-local function task_lines()
-	local lines = {}
+local function task_line(width)
+	local tasks = {}
 	for _, task in pairs(progress) do
-		local percentage = task.percentage and (" %d%%"):format(task.percentage) or ""
-		local title = vim.split(tostring(task.title or "Working"), "\n", { plain = true })
-		title[1] = title[1] .. percentage
-		vim.list_extend(lines, title)
+		local label = tostring(task.title or "Working")
 		if task.message and task.message ~= "" then
-			for _, line in ipairs(vim.split(tostring(task.message), "\n", { plain = true })) do
-				lines[#lines + 1] = "  " .. line
-			end
+			label = label .. ": " .. tostring(task.message):gsub("\n", " ")
 		end
+		if task.percentage then
+			label = label .. (" %d%%"):format(task.percentage)
+		end
+		tasks[#tasks + 1] = label
 	end
-	table.sort(lines)
-	return lines
+	table.sort(tasks)
+	local text = table.concat(tasks, "  ·  ")
+	while vim.fn.strdisplaywidth(text) > width and #text > 0 do
+		text = vim.fn.strcharpart(text, 0, vim.fn.strchars(text) - 1)
+	end
+	return text
 end
 
 local function render(opts)
-	local tasks = task_lines()
-	if #tasks == 0 then
+	if not next(progress) then
 		clear()
 		return false
 	end
@@ -75,14 +77,14 @@ local function render(opts)
 
 	local uv = vim.uv or vim.loop
 	local frame = frames[math.floor(uv.hrtime() / 80000000) % #frames + 1]
-	local title = opts.title or "LSP Progress"
-	local lines = { frame .. "  " .. title }
-	vim.list_extend(lines, tasks)
-
 	local margin_left = opts.margin_left or 1
 	local margin_right = opts.margin_right or 1
 	local width = math.max(1, vim.o.columns - margin_left - margin_right)
-	local height = #lines
+	local text = task_line(math.max(0, width - vim.fn.strdisplaywidth(frame) - 2))
+	local content = frame .. "  " .. text
+	local padding = string.rep(" ", math.max(0, width - vim.fn.strdisplaywidth(content)))
+	local lines = { padding .. content }
+	local height = 1
 	local row = vim.o.lines - vim.o.cmdheight - (opts.margin_bottom or 1) - height
 	local col = margin_left
 	if not progress_win or not progress_win:valid() then
@@ -112,29 +114,25 @@ local function render(opts)
 	vim.bo[progress_win.buf].modifiable = false
 	local namespace = vim.api.nvim_create_namespace("notify-progress")
 	vim.api.nvim_buf_clear_namespace(progress_win.buf, namespace, 0, -1)
-	vim.api.nvim_buf_add_highlight(progress_win.buf, namespace, "NotifyProgressSpinner", 0, 0, #frame)
-	vim.api.nvim_buf_add_highlight(progress_win.buf, namespace, "NotifyProgressTitle", 0, #frame + 2, -1)
-	for line = 1, #lines - 1 do
-		local text = lines[line + 1]
-		local task = text:gsub("^%s%s", "")
-		local percentage_start = task:find(" %d+%%$")
-		local task_end = #text
-		if percentage_start then
-			local start = #text - #task + percentage_start - 1
-			vim.api.nvim_buf_add_highlight(
-				progress_win.buf,
-				namespace,
-				"NotifyProgressPercentage",
-				line,
-				start,
-				task_end
-			)
-			task_end = start
+	local spinner_start = #padding
+	vim.api.nvim_buf_add_highlight(
+		progress_win.buf,
+		namespace,
+		"NotifyProgressSpinner",
+		0,
+		spinner_start,
+		spinner_start + #frame
+	)
+	local task_start = spinner_start + #frame + 2
+	vim.api.nvim_buf_add_highlight(progress_win.buf, namespace, "NotifyProgressTask", 0, task_start, -1)
+	local search_from = task_start
+	while true do
+		local start, finish = lines[1]:find(" %d+%%", search_from + 1)
+		if not start then
+			break
 		end
-		vim.api.nvim_buf_add_highlight(progress_win.buf, namespace, "NotifyProgressTask", line, 0, task_end)
-		if text:sub(1, 2) == "  " then
-			vim.api.nvim_buf_add_highlight(progress_win.buf, namespace, "NotifyProgressMessage", line, 2, -1)
-		end
+		vim.api.nvim_buf_add_highlight(progress_win.buf, namespace, "NotifyProgressPercentage", 0, start - 1, finish)
+		search_from = finish
 	end
 	progress_win.opts.row, progress_win.opts.col = math.max(0, row), col
 	progress_win.opts.width, progress_win.opts.height = width, height
