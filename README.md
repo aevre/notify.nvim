@@ -41,6 +41,9 @@ require("notify").setup({
   gap = 0,
   margin = { top = 1, right = 1, bottom = 0 },
   animate = true,
+  style = "default",
+  stages = "fade_in_slide_out",
+  animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
   routes = {
     { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
     { match = { exact = { "notify" }, source = "notify.send" }, to = "fidget" },
@@ -50,27 +53,34 @@ require("notify").setup({
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `timeout` | `3000` | Display duration in milliseconds. |
-| `max_width` | `0.4` | Maximum notification width; values below 1 are a fraction of the editor width. |
-| `min_width` | `40` | Minimum notification width. |
-| `max_height` | `0.6` | Maximum notification height; values below 1 are a fraction of the editor height. |
-| `gap` | `0` | Empty rows between stacked notifications. |
-| `margin` | `{ top = 1, right = 1, bottom = 0 }` | Editor edge margins; the default top row keeps notifications below the tabline. |
-| `padding` | `1` | Inner window padding. |
-| `border` | `"rounded"` | Floating window border style. |
-| `top_down` | `true` | Stack notifications from the top when true. |
-| `max_history` | `200` | Number of records retained in history. |
-| `max_queue` | `5` | Maximum visible notification windows; later notifications wait until a visible one expires or closes. |
-| `animate` | `true` | Use animate.nvim for stacking and slide transitions. |
-| `routes` | `nil` | Ordered list of bus routing rules. When omitted, built-in `notify` routes handle `vim.notify`, `notify.send()`, and `msg.show.*` events. |
-| `fidget` | `nil` | Fidget progress/message configuration, including `max_queue`, margins, animation, timeout, `spinner_frames`, and `spinner_interval`. |
-| `lsp_progress` | `false` | Let the LSP producer send Neovim `LspProgress` events directly to `notify.fidget.progress()`. |
+| `timeout` | `3000` | Default display duration in milliseconds. A per-notification `timeout = false` keeps that notification open until dismissed. |
+| `max_width` | `0.4` | Maximum outer window width. A number below `1` is a fraction of the editor width; a number at least `1` is a column count. |
+| `min_width` | `40` | Minimum notification width in columns, including padding. |
+| `max_height` | `0.6` | Maximum notification height. A number below `1` is a fraction of the editor height; a number at least `1` is a row count. |
+| `gap` | `0` | Empty rows between visible notifications. |
+| `margin` | `{ top = 1, right = 1, bottom = 0 }` | Distance from editor edges. `top` and `bottom` constrain vertical stacking; `right` positions the windows. |
+| `padding` | `1` | Horizontal inner padding used when measuring content and the default separator. |
+| `border` | `"rounded"` | Border style passed to win.nvim, such as `"single"`, `"rounded"`, or `"none"`. |
+| `top_down` | `true` | Stack from the top when true; stack upward from the bottom when false. |
+| `max_history` | `200` | Maximum number of notification records retained in memory. |
+| `max_queue` | `5` | Maximum number of visible notification windows. Additional notifications wait in arrival order. |
+| `animate` | `true` | Master switch for notification transitions and animated restacking. |
+| `style` | `"default"` | Renderer name: `default`, `minimal`, `simple`, `compact`, `wrapped-compact`, or `wrapped-default`. |
+| `stages` | `"fade_in_slide_out"` | Transition preset: `fade`, `slide`, `slide_out`, `fade_in_slide_out`, or `static`. A table can independently disable `open`, `layout`, or `close` by setting that phase to `false`; a function may return a preset or such a table. |
+| `animation` | `{ duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 }` | Options passed to animate.nvim: duration, easing, and frame rate. `duration` can be a number or a `{ step, total }` table. |
+| `routes` | `nil` | Ordered bus routes. Without custom routes, built-in routing sends `vim.notify` and `notify.send()` to notifications and `msg.show.*` to the notification backend. |
+| `fidget` | `nil` | Fidget options. See the Fidget section below for task capacity, margins, timeout, and spinner configuration. |
+| `lsp_progress` | `false` | Subscribe to Neovim `LspProgress` events and render them through `notify.fidget.progress()`. |
 
-The Fidget backend accepts `fidget = { max_queue = 5, spinner_interval = 200, spinner_frames = { "⠁", "⠂", "⠄", "⠐", "⠠", "⠰" } }` in setup options. `spinner_interval` is the frame duration in milliseconds, with a minimum of 50ms. Progress tasks may override the interval and frames with `spinner_interval`, `spinner_frames`, or `spinner = { ... }`; `spinner = true` uses the configured frames. A non-empty frame list containing anything other than non-empty strings falls back to the default frames. Fidget messages use `timeout` and may set `title`, `level`, and `icon`; `level` accepts `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, or `none`. Each concurrent task gets a separate transparent, borderless floating window. New tasks enter at the bottom and push older tasks upward using the same animate.nvim transitions as notifications. `max_queue` limits visible task windows. Additional tasks wait in arrival order and appear as visible tasks finish. Fidget is a general-purpose message backend; the separate LSP progress producer sends progress updates directly to it. LSP progress opts into a spinner and currently supplies its own six-frame spinner list.
+The Fidget backend accepts `fidget = { max_queue = 5, margin_bottom = 1, margin_right = 1, timeout = 3000, spinner_interval = 200, spinner_frames = { "⠁", "⠂", "⠄", "⠐", "⠠", "⠰" } }` in setup options. `spinner_interval` is the frame duration in milliseconds, with a minimum of 50ms. Progress tasks may override the interval and frames with `spinner_interval`, `spinner_frames`, or `spinner = { ... }`; `spinner = true` uses the configured frames. A non-empty frame list containing anything other than non-empty strings falls back to the default frames. Fidget messages use `timeout` and may set `title`, `level`, and `icon`; `level` accepts `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, or `none`. Each concurrent task gets a separate transparent, borderless floating window. New tasks enter at the bottom and push older tasks upward using the same animate.nvim transitions as notifications. `max_queue` limits visible task windows. Additional tasks wait in arrival order and appear as visible tasks finish. Fidget is a general-purpose message backend; the separate LSP progress producer sends progress updates directly to it. LSP progress opts into a spinner and currently supplies its own six-frame spinner list.
 
-The default layout follows the compact nvim-notify/Snacks style: each notification has a severity-colored title row, a separator, and highlighted message content inside a bordered window. Notifications stack at the top-right and slide in from the right with animate.nvim; width and height may be fractional editor limits. LSP progress is produced separately and sent directly to Fidget, which renders each task in its own full-width borderless bottom-right float; new tasks push older tasks upward with animate.nvim transitions. Fidget messages and progress are not added to notification history.
+The `default` renderer shows an icon and title, a separator spanning the notification content width, and the message. `wrapped-default` keeps that layout and wraps long message lines to fit the configured width. `minimal` shows the icon with the first message line; `simple` puts icon, title, and the first message line together. `compact` centers the title above a separator and message; `wrapped-compact` shows wrapped message lines without a title row. All renderers use `style` as a name, while per-notification `render` remains the callback for custom buffer content.
 
-Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. The `render` callback follows Noice's four-argument callback contract and receives a config with `render()`, `minimum_width()`, `max_width()`, and `max_height()` helpers. Set `timeout = false` for a persistent notification. Reuse `id` or pass `replace = record` to update an existing notification.
+`stages` chooses the transition preset; `animation` passes timing and easing options to animate.nvim. Use `animate = false` or `stages = "static"` to disable transitions. Fractional `max_width` and `max_height` values scale with the current editor dimensions. Notifications stack at the top-right by default, and the Fidget backend uses separate bottom-right windows. LSP progress is produced separately and sent directly to Fidget, which renders each task in its own full-width borderless bottom-right float; new tasks push older tasks upward with animate.nvim transitions. Fidget messages and progress are not added to notification history.
+
+Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`. `id` identifies a notification; sending another notification with the same ID replaces its record and window. `replace` accepts an existing ID or record. `keep` may be a boolean or a predicate that postpones timeout dismissal while it returns true. `hide_from_history` omits a record from history unless `history({ include_hidden = true })` is used. `on_open` and `on_close` receive the window ID and record.
+
+The custom `render` callback receives `(buf, record, highlights, config)`. The config provides `render()`, `minimum_width()`, `max_width()`, and `max_height()` helpers for integrations such as Noice. Set `timeout = false` for a persistent notification.
 
 ## API
 
@@ -127,14 +137,3 @@ Subscribers can match `exact`, `prefix`, or Lua-pattern `fuzzy` tags. Bus subscr
 ## UI ownership
 
 notify.nvim owns `vim.notify` and its notification history. If Noice is also installed, keep Noice's `notify.enabled` and `lsp.progress.enabled` options disabled so command-line and message UI remain with Noice without installing competing notification handlers.
-
-## Migration
-
-This plugin is the standalone replacement for the notification implementation previously kept in the configuration. The configuration's notification history source continues to consume the same `id`, `level`, `title`, and `message` fields.
-
-The dependency chain is:
-
-```text
-notify.nvim -> win.nvim
-notify.nvim -> animate.nvim
-```

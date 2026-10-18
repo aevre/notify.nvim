@@ -53,7 +53,10 @@ local visual = vim.notify("body line 1\nbody line 2", vim.log.levels.ERROR, { ti
 local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)
 check(#visual_lines == 4 and visual_lines[2]:find("━", 1, true), "notification title separator")
 check(#vim.api.nvim_buf_get_extmarks(visual.win.buf, -1, 0, -1, {}) > 0, "notification highlights")
-
+check(
+	vim.fn.strdisplaywidth(visual_lines[2]) == visual.win.opts.width - 1,
+	"separator fills notification content width"
+)
 local replaced = vim.notify("replaced message", vim.log.levels.ERROR, {
 	id = "smoke",
 	timeout = false,
@@ -66,6 +69,13 @@ local replaced_by_record = vim.notify("replaced again", nil, {
 	timeout = false,
 })
 check(replaced_by_record == first and replaced_by_record.level == "ERROR", "replacement by record")
+for _, style in ipairs({ "default", "minimal", "simple", "compact", "wrapped-compact", "wrapped-default" }) do
+	notify.setup({ animate = false, style = style })
+	local styled = vim.notify("style message", vim.log.levels.INFO, { timeout = false })
+	check(styled.win and styled.win:valid(), "renderer " .. style .. " opens")
+	notify.dismiss()
+end
+notify.setup({ animate = false })
 
 local hidden = vim.notify("hidden", vim.log.levels.WARN, {
 	hide_from_history = true,

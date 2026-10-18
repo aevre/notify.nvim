@@ -36,7 +36,9 @@
 ---@field animate? boolean
 ---@field animation? table
 ---@field notify? boolean
----@field render? fun(buf: integer, record: notify.Record, hl: table, config: table): any
+---@field style? string Built-in renderer name.
+---@field stages? string|table|fun():string Animation stage name or phase selector.
+---@field render? string|fun(buf: integer, record: notify.Record, hl: table, config: table): any
 ---@field on_open? fun(win: integer, record: notify.Record)
 ---@field on_close? fun(win: integer, record: notify.Record)
 ---@field keep? boolean|fun(): boolean
@@ -86,6 +88,9 @@
 ---@field max_history integer
 ---@field max_queue integer
 ---@field animation table
+---@field style string
+---@field stages any
+---@field render fun():fun(buf: integer, record: notify.Record)
 ---@field icons table<string, string>
 ---@field max_width_value integer
 ---@field max_height_value integer
@@ -119,7 +124,9 @@ local defaults = {
 	max_history = 200,
 	max_queue = 5,
 	animate = true,
+	stages = "fade_in_slide_out",
 	animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
+	style = "default",
 	icons = {},
 	-- Compatibility for Noice's notify backend.
 	render = function()
@@ -212,49 +219,98 @@ local function refresh_dimensions()
 end
 
 ---@param record notify.Record
----@return integer width, integer height
-local function dimensions(record)
-	refresh_dimensions()
+---@return string[] lines
+local function render_lines(record)
 	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
-	local title = icon .. "  " .. (record.title[1] ~= "" and record.title[1] or "Notification")
-	local width = math.max(config.min_width, vim.fn.strdisplaywidth(title) + 2)
-	for _, line in ipairs(record.message) do
-		width = math.max(width, vim.fn.strdisplaywidth(line) + 2)
+	local title = record.title[1] ~= "" and record.title[1] or "Notification"
+	local message = vim.deepcopy(record.message)
+	local style = config.style
+	if type(style) ~= "string" then
+		style = "default"
 	end
-	local max_width = math.min(config.max_width_value, vim.o.columns - config.margin.right - 2)
-	width = math.max(1, math.min(width + config.padding * 2, max_width))
-	-- Notifications use nowrap, so each message line occupies exactly one row.
-	local height = 2 + #record.message
-	return width, math.max(1, math.min(height, config.max_height_value))
+	if style == "minimal" then
+		message[1] = icon .. " " .. (message[1] or "")
+		return message
+	elseif style == "simple" then
+		message[1] = icon .. " | " .. title .. ": " .. (message[1] or "")
+		return message
+	elseif style == "wrapped-default" or style == "wrapped-compact" then
+		local max_width = math.max(10, config.max_width_value - 2 * config.padding)
+		local wrapped = {}
+		for _, line in ipairs(message) do
+			while vim.fn.strdisplaywidth(line) > max_width do
+				wrapped[#wrapped + 1] = vim.fn.strcharpart(line, 0, max_width)
+				line = vim.fn.strcharpart(line, max_width + 1)
+			end
+			wrapped[#wrapped + 1] = line
+		end
+		message = wrapped
+		if style == "wrapped-compact" then
+			return message
+		end
+	elseif style == "compact" then
+		local width = 0
+		for _, line in ipairs(message) do
+			width = math.max(width, vim.fn.strdisplaywidth(line))
+		end
+		local centered = math.max(0, math.floor((width - vim.fn.strdisplaywidth(title)) / 2))
+		return {
+			string.rep(" ", centered) .. title,
+			string.rep("━", math.max(width, vim.fn.strdisplaywidth(title))),
+			unpack(message),
+		}
+	end
+	return { icon .. "  " .. title, "", unpack(message) }
 end
 
 ---@param record notify.Record
-local function set_buffer(record)
+---@return integer width, integer height
+local function dimensions(record)
+	refresh_dimensions()
+	local lines = render_lines(record)
+	local content_width = config.min_width - 2 * config.padding
+	for _, line in ipairs(lines) do
+		content_width = math.max(content_width, vim.fn.strdisplaywidth(line))
+	end
+	local max_width = math.min(config.max_width_value, vim.o.columns - config.margin.right - 2)
+	local width = math.max(1, math.min(content_width + 2 * config.padding, max_width))
+	return width, math.max(1, math.min(#lines, config.max_height_value))
+end
+
+---@param record notify.Record
+local function set_buffer(record, target_width)
 	local win = record.win
 	if not win or not win:valid() then
 		return
 	end
-	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
-	local title = icon .. "  " .. (record.title[1] ~= "" and record.title[1] or "Notification")
-	local width = dimensions(record)
-	local separator = string.rep("━", math.max(1, width - config.padding * 2))
-	local lines = { title, separator }
-	vim.list_extend(lines, record.message)
+	local lines = render_lines(record)
+	local width = target_width or vim.api.nvim_win_get_width(win.win)
+	if config.style == "default" or config.style == "wrapped-default" then
+		lines[2] = string.rep("━", math.max(1, width - 2 * config.padding + 1))
+	end
 	record.namespace = record.namespace or vim.api.nvim_create_namespace("notify:" .. record.id)
 	vim.bo[win.buf].modifiable = true
 	vim.api.nvim_buf_set_lines(win.buf, 0, -1, false, lines)
 	vim.bo[win.buf].modifiable = false
 	vim.api.nvim_buf_clear_namespace(win.buf, record.namespace, 0, -1)
-	local icon_end = #icon
-	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Icon", 0, 0, icon_end)
-	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Title", 0, icon_end, -1)
-	vim.api.nvim_buf_set_extmark(win.buf, record.namespace, 0, 0, {
-		virt_text = { { " " .. record.title[2] .. " ", "Notify" .. record.level_name .. "Title" } },
-		virt_text_pos = "right_align",
-		priority = 10,
-	})
-	vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Separator", 1, 0, -1)
-	for line = 2, #lines - 1 do
+	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
+	if config.style == "simple" or config.style == "minimal" or config.style == "default" then
+		vim.api.nvim_buf_add_highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Icon", 0, 0, #icon)
+	end
+	if config.style == "default" or config.style == "wrapped-default" then
+		vim.api.nvim_buf_add_highlight(
+			win.buf,
+			record.namespace,
+			"Notify" .. record.level_name .. "Separator",
+			1,
+			0,
+			-1
+		)
+	end
+	local body_start = (config.style == "default" or config.style == "wrapped-default" or config.style == "compact")
+			and 2
+		or 0
+	for line = body_start, #lines - 1 do
 		vim.api.nvim_buf_add_highlight(
 			win.buf,
 			record.namespace,
@@ -303,6 +359,29 @@ local function row_positions()
 	return rows
 end
 
+local function animation_enabled(phase)
+	if not config.animate then
+		return false
+	end
+	local stage = config.stages
+	if type(stage) == "function" then
+		stage = stage()
+	end
+	if type(stage) == "table" then
+		return stage[phase] ~= false
+	end
+	return stage == "fade_in_slide_out"
+		or stage == "fade"
+		or stage == "slide"
+		or stage == "slide_out" and phase == "close"
+end
+
+local function animation_opts(id)
+	local options = vim.deepcopy(config.animation)
+	options.id, options.int = id, true
+	return options
+end
+
 local function layout()
 	if not Win then
 		return
@@ -312,13 +391,13 @@ local function layout()
 		local target = rows[record.id]
 		if target and record.win:valid() then
 			local current = record.win.opts.row or target
-			if config.animate and Animate and current ~= target then
+			if animation_enabled("layout") and Animate and current ~= target then
 				Animate(current, target, function(value)
 					if record.win and record.win:valid() then
 						record.win.opts.row = math.floor(value + 0.5)
 						record.win:update()
 					end
-				end, vim.tbl_extend("force", config.animation, { int = true, id = "notify:row:" .. record.id }))
+				end, animation_opts("notify:row:" .. record.id))
 			else
 				record.win.opts.row = target
 				record.win:update()
@@ -335,8 +414,10 @@ local function render(record)
 	if not win or not win:valid() then
 		local row = row_positions()[record.id] or 0
 		local col = math.max(0, vim.o.columns - width - config.margin.right)
-		local initial_width = config.animate and 1 or width
-		local initial_col = config.animate and vim.o.columns - config.margin.right - initial_width or col
+		local entering = animation_enabled("open")
+			and (config.stages == "slide" or config.stages == "fade_in_slide_out")
+		local initial_width = entering and 1 or width
+		local initial_col = entering and vim.o.columns - config.margin.right - initial_width or col
 		win = Win({
 			position = "float",
 			relative = "editor",
@@ -356,7 +437,7 @@ local function render(record)
 				linebreak = true,
 				conceallevel = 2,
 				colorcolumn = "",
-				winblend = 5,
+				winblend = config.stages == "fade" and 95 or 5,
 				winhighlight = table.concat({
 					"Normal:Notify" .. level .. "Body",
 					"NormalNC:Notify" .. level .. "Body",
@@ -382,11 +463,14 @@ local function render(record)
 			end,
 		})
 		record.win = win
-		set_buffer(record)
+		if config.stages == "fade_in_slide_out" or config.stages == "fade" then
+			win.opts.winblend = 95
+		end
+		set_buffer(record, width)
 		if record.on_open then
 			record.on_open(win.win, record)
 		end
-		if config.animate and Animate then
+		if entering and Animate then
 			Animate(initial_width, width, function(value)
 				if win:valid() then
 					local current_width = math.floor(value + 0.5)
@@ -394,10 +478,10 @@ local function render(record)
 					win.opts.col = vim.o.columns - config.margin.right - current_width
 					win:update()
 				end
-			end, vim.tbl_extend("force", config.animation, { int = true, id = "notify:width:" .. record.id }))
+			end, animation_opts("notify:width:" .. record.id))
 		end
 	else
-		set_buffer(record)
+		set_buffer(record, width)
 		win.opts.width, win.opts.height = width, height
 		win.opts.wo.winhighlight = table.concat({
 			"Normal:Notify" .. level .. "Body",
@@ -464,7 +548,7 @@ close = function(record, animate)
 	record.timer = nil
 	if record.win and record.win:valid() then
 		local win = record.win
-		if animate and Animate and config.animate then
+		if animate and Animate and animation_enabled("close") then
 			local from = win.opts.width or dimensions(record)
 			Animate(from, 1, function(value, ctx)
 				if win:valid() then
@@ -476,7 +560,7 @@ close = function(record, animate)
 						win:close()
 					end
 				end
-			end, vim.tbl_extend("force", config.animation, { int = true, id = "notify:width:" .. record.id }))
+			end, animation_opts("notify:width:" .. record.id))
 		else
 			win:close()
 		end
@@ -605,8 +689,13 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		M._queue[#M._queue + 1] = record
 	else
 		render(record)
-		if opts.render then
-			pcall(opts.render, record.win.buf, record, {}, config)
+		local renderer = opts.render
+		if type(renderer) == "string" then
+			local ok, value = pcall(renderer)
+			renderer = ok and value or nil
+		end
+		if type(renderer) == "function" then
+			pcall(renderer, record.win.buf, record, {}, config)
 		end
 		record.timer = opts.timeout ~= false
 				and opts.timeout ~= 0
@@ -650,13 +739,6 @@ end
 ---@return table
 function M.setup(opts)
 	config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
-	local configured_render = config.render
-	config.render = function()
-		if type(configured_render) == "function" then
-			return configured_render
-		end
-		return defaults.render()
-	end
 	config._max_width = config.max_width
 	config._max_height = config.max_height
 	refresh_dimensions()
