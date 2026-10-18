@@ -487,11 +487,14 @@ local function render(record)
 			record.on_open(win.win, record)
 		end
 		if entering and Animate then
-			Animate(initial_width, width, function(value)
+			Animate(initial_width, width, function(value, ctx)
 				if win:valid() then
 					local current_width = math.floor(value + 0.5)
 					win.opts.width = current_width
 					win.opts.col = vim.o.columns - config.margin.right - current_width
+					if ctx and ctx.done and (config.stages == "fade_in_slide_out" or config.stages == "fade") then
+						win.opts.wo.winblend = config.stages == "fade" and 95 or 5
+					end
 					win:update()
 					redraw_now(win.win)
 				end
