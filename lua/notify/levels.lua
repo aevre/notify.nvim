@@ -16,7 +16,7 @@
 ---@field none notify.LevelInfo
 ---@field name fun(level?: notify.Level): string
 
----@type notify.Levels
+---@class notify.Levels
 local M = {
 	TRACE = { value = vim.log.levels.TRACE or 0, icon = "·" },
 	DEBUG = { value = vim.log.levels.DEBUG, icon = "󰃤" },
