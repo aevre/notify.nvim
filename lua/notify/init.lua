@@ -295,6 +295,68 @@ local function dimensions(record)
 	return width, math.max(1, math.min(#lines, config.max_height_value))
 end
 
+local function hl_color(group, prop, fallback)
+	local value = vim.api.nvim_get_hl(0, { name = group, link = false })[prop]
+	if type(value) == "number" then
+		return ("#%06x"):format(value)
+	end
+	return fallback
+end
+
+local function blend_color(from, to, amount)
+	if from == "NONE" or not from:match("^#%x%x%x%x%x%x$") then
+		from = "#000000"
+	end
+	if to == "NONE" or not to:match("^#%x%x%x%x%x%x$") then
+		to = "#ffffff"
+	end
+
+	local function channel(color, index)
+		return tonumber(color:sub(index, index + 1), 16) or 0
+	end
+
+	local result = {}
+	for index in ipairs({ 2, 4, 6 }) do
+		result[index] = math.floor(
+			channel(from, ({ 2, 4, 6 })[index]) * (1 - amount) + channel(to, ({ 2, 4, 6 })[index]) * amount + 0.5
+		)
+	end
+	return ("#%02x%02x%02x"):format(result[1], result[2], result[3])
+end
+
+local function fade_group(record, suffix)
+	return ("NotifyFade%d%s"):format(record.id, suffix)
+end
+
+local function set_fade_highlights(record, amount)
+	local level = record.level_name
+	local normal_bg = hl_color("Normal", "bg", "#000000")
+	local body_bg = hl_color("Notify" .. level .. "Body", "bg", normal_bg)
+	local fade_bg = blend_color(normal_bg, body_bg, amount)
+	local roles = { "Body", "Border", "Title", "Icon", "Separator", "Message" }
+	for _, role in ipairs(roles) do
+		local source = "Notify" .. level .. role
+		local target = hl_color(source, "fg", hl_color("Normal", "fg", "#ffffff"))
+		local fg = blend_color(fade_bg, target, amount)
+		vim.api.nvim_set_hl(0, fade_group(record, role), { fg = fg, bg = fade_bg, bold = role == "Title" })
+	end
+end
+
+local function window_highlights(record)
+	local level = record.level_name
+	local fading = config.stages == "fade" or config.stages == "fade_in_slide_out"
+	local function group(role)
+		return fading and fade_group(record, role) or "Notify" .. level .. role
+	end
+	return table.concat({
+		"Normal:" .. group("Body"),
+		"NormalNC:" .. group("Body"),
+		"EndOfBuffer:" .. group("Body"),
+		"FloatBorder:" .. group("Border"),
+		"FloatTitle:" .. group("Title"),
+	}, ",")
+end
+
 local function set_buffer(record, target_width)
 	local win = record.win
 	if not win or not win:valid() then
@@ -314,16 +376,40 @@ local function set_buffer(record, target_width)
 	text.highlight(win.buf, record.namespace, #lines)
 	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
 	if config.style == "simple" or config.style == "minimal" or config.style == "default" then
-		util.highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Icon", 0, 0, #icon)
+		util.highlight(
+			win.buf,
+			record.namespace,
+			(config.stages == "fade" or config.stages == "fade_in_slide_out") and fade_group(record, "Icon")
+				or "Notify" .. record.level_name .. "Icon",
+			0,
+			0,
+			#icon
+		)
 	end
 	if config.style == "default" or config.style == "wrapped-default" then
-		util.highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Separator", 1, 0, #lines[2])
+		util.highlight(
+			win.buf,
+			record.namespace,
+			(config.stages == "fade" or config.stages == "fade_in_slide_out") and fade_group(record, "Separator")
+				or "Notify" .. record.level_name .. "Separator",
+			1,
+			0,
+			#lines[2]
+		)
 	end
 	local body_start = (config.style == "default" or config.style == "wrapped-default" or config.style == "compact")
 			and 2
 		or 0
 	for line = body_start, #lines - 1 do
-		util.highlight(win.buf, record.namespace, "Notify" .. record.level_name .. "Message", line, 0, #lines[line + 1])
+		util.highlight(
+			win.buf,
+			record.namespace,
+			(config.stages == "fade" or config.stages == "fade_in_slide_out") and fade_group(record, "Message")
+				or "Notify" .. record.level_name .. "Message",
+			line,
+			0,
+			#lines[line + 1]
+		)
 	end
 end
 
@@ -387,6 +473,12 @@ local function animation_opts(id)
 	return options
 end
 
+local function fade_animation_opts(id)
+	local opts = animation_opts(id)
+	opts.int = false
+	return opts
+end
+
 local function layout()
 	if not Win then
 		return
@@ -422,7 +514,6 @@ end
 
 local function render(record)
 	local width, height = dimensions(record)
-	local level = record.level_name
 	local win = record.win
 	if not win or not win:valid() then
 		local row = row_positions()[record.id] or 0
@@ -451,14 +542,8 @@ local function render(record)
 				linebreak = true,
 				conceallevel = 0,
 				colorcolumn = "",
-				winblend = config.stages == "fade" and 95 or 5,
-				winhighlight = table.concat({
-					"Normal:Notify" .. level .. "Body",
-					"NormalNC:Notify" .. level .. "Body",
-					"EndOfBuffer:Notify" .. level .. "Body",
-					"FloatBorder:Notify" .. level .. "Border",
-					"FloatTitle:Notify" .. level .. "Title",
-				}, ","),
+				winblend = 0,
+				winhighlight = window_highlights(record),
 			},
 			on_close = function(closed_win)
 				record.win = nil
@@ -478,23 +563,31 @@ local function render(record)
 			end,
 		})
 		record.win = win
-		if config.stages == "fade" then
-			win.opts.wo = win.opts.wo or {}
-			win.opts.wo.winblend = 95
-		end
+		local fading = config.stages == "fade" or config.stages == "fade_in_slide_out"
+		set_fade_highlights(record, fading and Animate and animation_enabled("open") and 0 or 1)
 		set_buffer(record, width)
 		if record.on_open then
 			record.on_open(win.win, record)
 		end
+		if
+			Animate
+			and (config.stages == "fade" or config.stages == "fade_in_slide_out")
+			and animation_enabled("open")
+		then
+			Animate(0, 1, function(value)
+				if win:valid() then
+					set_fade_highlights(record, value)
+					win:update()
+					redraw_now(win.win)
+				end
+			end, fade_animation_opts("notify:fade:" .. record.id))
+		end
 		if entering and Animate then
-			Animate(initial_width, width, function(value, ctx)
+			Animate(initial_width, width, function(value)
 				if win:valid() then
 					local current_width = math.floor(value + 0.5)
 					win.opts.width = current_width
 					win.opts.col = vim.o.columns - config.margin.right - current_width
-					if ctx and ctx.done and config.stages == "fade" then
-						win.opts.wo.winblend = 95
-					end
 					win:update()
 					redraw_now(win.win)
 				end
@@ -503,13 +596,7 @@ local function render(record)
 	else
 		set_buffer(record, width)
 		win.opts.width, win.opts.height = width, height
-		win.opts.wo.winhighlight = table.concat({
-			"Normal:Notify" .. level .. "Body",
-			"NormalNC:Notify" .. level .. "Body",
-			"EndOfBuffer:Notify" .. level .. "Body",
-			"FloatBorder:Notify" .. level .. "Border",
-			"FloatTitle:Notify" .. level .. "Title",
-		}, ",")
+		win.opts.wo.winhighlight = window_highlights(record)
 		win:update()
 	end
 	local row = row_positions()[record.id]
@@ -571,19 +658,32 @@ close = function(record, animate)
 	local win = record.win
 	if win and win:valid() then
 		if animate and Animate and animation_enabled("close") then
-			local from = win.opts.width or dimensions(record)
-			Animate(from, 1, function(value, ctx)
-				if win:valid() then
-					local current_width = math.max(1, math.floor(value + 0.5))
-					win.opts.width = current_width
-					win.opts.col = vim.o.columns - config.margin.right - current_width
-					win:update()
-					redraw_now(win.win)
-					if ctx and ctx.done then
-						win:close()
+			if config.stages == "fade" then
+				Animate(1, 0, function(value, ctx)
+					if win:valid() then
+						set_fade_highlights(record, value)
+						win:update()
+						redraw_now(win.win)
+						if ctx and ctx.done then
+							win:close()
+						end
 					end
-				end
-			end, animation_opts("notify:width:" .. record.id))
+				end, fade_animation_opts("notify:fade:" .. record.id))
+			else
+				local from = win.opts.width or dimensions(record)
+				Animate(from, 1, function(value, ctx)
+					if win:valid() then
+						local current_width = math.max(1, math.floor(value + 0.5))
+						win.opts.width = current_width
+						win.opts.col = vim.o.columns - config.margin.right - current_width
+						win:update()
+						redraw_now(win.win)
+						if ctx and ctx.done then
+							win:close()
+						end
+					end
+				end, animation_opts("notify:width:" .. record.id))
+			end
 		else
 			win:close()
 		end

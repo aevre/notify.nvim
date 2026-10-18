@@ -46,7 +46,7 @@ local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)
 check(vim.bo[visual.win.buf].filetype == "markdown", "notification buffers use Markdown highlights")
 check(vim.wo[visual.win.win].conceallevel == 0, "Markdown syntax markers remain visible")
 check(
-	vim.wo[visual.win.win].winhighlight:find("EndOfBuffer:NotifyERRORBody", 1, true),
+	vim.wo[visual.win.win].winhighlight:find("EndOfBuffer:NotifyFade" .. visual.id .. "Body", 1, true),
 	"buffer-end rows use notification background"
 )
 check(visual_lines[3]:find("**body line 1**", 1, true), "Markdown markers remain visible")
