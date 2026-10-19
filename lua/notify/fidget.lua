@@ -1,5 +1,6 @@
 ---@class notify.FidgetConfig
 ---@field max_queue? integer Maximum visible progress windows.
+---@field max_width? number Maximum window width; values below 1 are a fraction of editor width.
 ---@field margin_left? integer Left editor margin.
 ---@field margin_right? integer Right editor margin.
 ---@field margin_bottom? integer Bottom editor margin.
@@ -142,9 +143,10 @@ local function layout()
 		list[#list + 1] = all_tasks[index]
 	end
 	local opts = current_opts
-	local margin = opts.margin_right or 1
-	local width = math.max(1, vim.o.columns - (opts.margin_left or 1) - margin)
-	---@cast width integer
+	local margin_left, margin_right = opts.margin_left or 1, opts.margin_right or 1
+	local max_width = type(opts.max_width) == "number" and opts.max_width or 0.4
+	max_width = math.floor(max_width < 1 and vim.o.columns * max_width or max_width)
+	max_width = math.max(1, math.min(max_width, vim.o.columns - margin_left - margin_right))
 	local bottom = vim.o.lines - vim.o.cmdheight - (opts.margin_bottom or 1)
 	for index, item in ipairs(list) do
 		local task, row = item.task, bottom - (#list - index + 1)
@@ -166,19 +168,19 @@ local function layout()
 		if task.percentage then
 			label = label .. (" %d%%"):format(task.percentage)
 		end
-		local available = math.max(0, width - vim.fn.strdisplaywidth(icon) - (icon ~= "" and 2 or 0))
+		local available = math.max(0, max_width - vim.fn.strdisplaywidth(icon) - (icon ~= "" and 2 or 0))
 		while vim.fn.strdisplaywidth(label) > available and #label > 0 do
 			label = vim.fn.strcharpart(label, 0, vim.fn.strchars(label) - 1)
 		end
-		local content = icon ~= "" and (icon .. "  " .. label) or label
-		local padding = string.rep(" ", math.max(0, width - vim.fn.strdisplaywidth(content)))
-		local line = padding .. content
+		local line = icon ~= "" and (icon .. "  " .. label) or label
+		local width = math.max(1, math.min(vim.fn.strdisplaywidth(line), max_width))
+		local col = vim.o.columns - margin_right - width
 		if not task.win or not task.win:valid() then
 			task.win = Win({
 				position = "float",
 				relative = "editor",
 				row = row,
-				col = opts.margin_left or 1,
+				col = col,
 				width = width,
 				height = 1,
 				border = "none",
@@ -206,7 +208,7 @@ local function layout()
 		)
 		local ns = vim.api.nvim_create_namespace("notify-progress")
 		vim.api.nvim_buf_clear_namespace(task.win.buf, ns, 0, -1)
-		local icon_start = #padding
+		local icon_start = 0
 		if icon ~= "" then
 			util.highlight(
 				task.win.buf,
@@ -234,7 +236,7 @@ local function layout()
 		end
 		local old_row = task.win.opts.row
 		old_row = type(old_row) == "number" and old_row or row
-		task.win.opts.width, task.win.opts.col, task.win.opts.zindex = width, opts.margin_left or 1, 80 + index
+		task.win.opts.width, task.win.opts.col, task.win.opts.zindex = width, col, 80 + index
 		if opts.animate ~= false and Animate and old_row ~= row then
 			Animate(old_row, row, function(value)
 				if task.win and task.win:valid() then

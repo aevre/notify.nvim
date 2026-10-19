@@ -52,6 +52,7 @@ require("notify").setup({
   picker = "telescope", -- optional default: "fzf", "telescope", or "select"
   fidget = {
     max_queue = 5,
+    max_width = 0.4,
     margin_left = 1,
     margin_right = 1,
     margin_bottom = 1,
@@ -97,6 +98,7 @@ Configure Fidget through the top-level `fidget` option:
 ```lua
 fidget = {
   max_queue = 5,
+  max_width = 0.4,
   margin_left = 1,
   margin_right = 1,
   margin_bottom = 1,
@@ -106,6 +108,7 @@ fidget = {
 }
 ```
 
+- Windows fit their content up to `max_width`, which accepts a fraction of the editor width or a fixed column count and defaults to `0.4`.
 - `spinner_interval` is the frame duration in milliseconds and is clamped to at least 50ms.
 - Progress tasks can override the frames and interval with `spinner_frames`, `spinner_interval`, or `spinner = { ... }`. `spinner = true` uses the configured frames.
 - Frame lists must contain non-empty strings; invalid lists fall back to the built-in frames.
@@ -124,7 +127,7 @@ Fidget is a general-purpose message surface. The separate LSP progress producer 
 
 Use `style` to select a built-in renderer. Use `animate = false` or `stages = "static"` to disable transitions. `stages` selects the transition preset, while `animation` passes timing and easing options to animate.nvim. Fractional `max_width` and `max_height` scale with the current editor dimensions.
 
-Notifications stack at the top-right. Fidget tasks use separate full-width, borderless bottom-right windows and push older tasks upward. Fidget messages and progress are not added to notification history.
+Notifications stack at the top-right. Fidget tasks use separate content-width, borderless bottom-right windows and push older tasks upward. Fidget messages and progress are not added to notification history.
 
 ### Per-notification options
 

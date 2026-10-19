@@ -248,15 +248,44 @@ check(token == "7:single-line", "fidget progress API identifies task")
 check(#fidget.history() == 2 and fidget.history()[2].state == "active", "fidget progress history")
 check(require("notify.levels").name(vim.log.levels.WARN) == "WARN", "shared level metadata")
 local fidget_win
-vim.wait(250, function()
+local function find_fidget_win(text)
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
 		if vim.wo[win].winhighlight:find("NotifyFidgetBackground", 1, true) then
-			fidget_win = win
-			return true
+			local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1]
+			if line and line:find(text, 1, true) then
+				return win
+			end
 		end
 	end
-	return false
+end
+vim.wait(250, function()
+	fidget_win = find_fidget_win("Index")
+	return fidget_win ~= nil
 end, 10)
+local fidget_line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(fidget_win), 0, 1, false)[1]
+check(vim.api.nvim_win_get_width(fidget_win) == vim.fn.strdisplaywidth(fidget_line), "fidget fits short content")
+local fidget_max_width = math.max(1, math.min(math.floor(vim.o.columns * 0.4), vim.o.columns - 2))
+fidget.progress(string.rep("long message ", 10), {
+	client_id = 7,
+	token = "single-line",
+	title = "Index",
+	percentage = 42,
+	icon = "LSP",
+})
+check(
+	vim.wait(100, function()
+		fidget_win = find_fidget_win("Index")
+		return fidget_win and vim.api.nvim_win_get_width(fidget_win) == fidget_max_width
+	end, 10),
+	"fidget respects maximum width"
+)
+fidget.progress("building", {
+	client_id = 7,
+	token = "single-line",
+	title = "Index",
+	percentage = 42,
+	icon = "LSP",
+})
 fidget.progress("working", {
 	client_id = 8,
 	token = "stacked",
