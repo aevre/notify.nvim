@@ -332,14 +332,15 @@ end
 
 local function set_fade_highlights(record, amount)
 	local level = record.level_name
-	local normal_bg = hl_color("Normal", "bg", "#000000")
+	local normal_bg = hl_color("Normal", "bg", "NONE")
 	local body_bg = hl_color("Notify" .. level .. "Body", "bg", normal_bg)
-	local fade_bg = blend_color(normal_bg, body_bg, amount)
+	local transparent = body_bg == "NONE"
+	local fade_bg = transparent and "NONE" or blend_color(normal_bg, body_bg, amount)
 	local roles = { "Body", "Border", "Title", "Icon", "Separator", "Message" }
 	for _, role in ipairs(roles) do
 		local source = "Notify" .. level .. role
 		local target = hl_color(source, "fg", hl_color("Normal", "fg", "#ffffff"))
-		local fg = blend_color(fade_bg, target, amount)
+		local fg = transparent and blend_color("#000000", target, amount) or blend_color(fade_bg, target, amount)
 		vim.api.nvim_set_hl(0, fade_group(record, role), { fg = fg, bg = fade_bg, bold = role == "Title" })
 	end
 end
