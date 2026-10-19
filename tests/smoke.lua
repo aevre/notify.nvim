@@ -41,6 +41,35 @@ check(first.title[1] == "Smoke", "notification title")
 check(first.win and not first.win.backdrop, "notifications do not create a backdrop")
 check(vim.api.nvim_win_get_config(first.win.win).zindex > 200, "notifications stay above cmdline floats")
 check(notify.history()[1] == first, "notification history")
+local notification_source = require("notify.integrations.fzf")
+local notification_records = notification_source.source()
+check(notification_records[1].raw == first, "notification source history")
+check(notification_records[1].display:find("Smoke", 1, true) ~= nil, "notification source display")
+check(notification_source.preview(first)[1] == "# Smoke", "notification source preview")
+check(notification_records[1].id == first.id, "picker source preserves record fields")
+local original_select = vim.ui.select
+local selected_items
+vim.ui.select = function(items, _, callback)
+	selected_items = items
+	callback(items[1], 1)
+end
+notify.picker({ backend = "select" })
+check(selected_items and selected_items[1]:find("Smoke", 1, true), "select picker displays searchable history")
+check(vim.bo.filetype == "markdown", "select picker opens Markdown history buffer")
+vim.ui.select = original_select
+notify.setup({ animate = false, picker = "select" })
+local configured_backend_called = false
+local original_picker_select = vim.ui.select
+vim.ui.select = function(_, _, callback)
+	configured_backend_called = true
+	callback(nil, nil)
+end
+notify.picker()
+check(configured_backend_called, "configured picker backend")
+vim.ui.select = original_picker_select
+notify.setup({ animate = false })
+local fidget_source = notification_source.source("fidget")
+check(type(fidget_source) == "table" and #fidget_source == 0, "empty fidget source")
 local visual = vim.notify("**body line 1**\nbody line 2", vim.log.levels.ERROR, { timeout = false })
 local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)
 check(vim.bo[visual.win.buf].filetype == "markdown", "notification buffers use Markdown highlights")

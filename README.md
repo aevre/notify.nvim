@@ -49,6 +49,7 @@ require("notify").setup({
   top_down = true,
   icons = { INFO = "ℹ", WARN = "⚠" },
   lsp_progress = true,
+  picker = "telescope", -- optional default: "fzf", "telescope", or "select"
   fidget = {
     max_queue = 5,
     margin_left = 1,
@@ -201,6 +202,18 @@ unsubscribe()
 ```
 
 Subscribers match tags using `exact`, `prefix`, or Lua-pattern `fuzzy` selectors. Subscriber errors are reported through `nvim_echo` and do not recursively emit another notification.
+
+## Picker integration
+
+`notify.picker()` opens notification history with the configured picker or an automatically detected backend. Set `picker` in `setup()` or pass `backend` per call; supported values are `"fzf"`, `"telescope"`, and `"select"` (`vim.ui.select`). Automatic detection prefers an already-loaded Telescope, then fzf-lua, and otherwise uses `vim.ui.select`.
+
+```lua
+local notify = require("notify")
+notify.picker() -- configured backend, or auto-detected backend
+notify.picker({ backend = "select", kind = "fidget" })
+```
+
+It reads ordinary and Fidget history independently, shows searchable formatted entries, previews the full record as Markdown, opens the selected record in a buffer, and copies the message with `Ctrl-Y`.
 
 ## UI ownership
 

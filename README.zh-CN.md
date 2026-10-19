@@ -49,6 +49,7 @@ require("notify").setup({
   top_down = true,
   icons = { INFO = "ℹ", WARN = "⚠" },
   lsp_progress = true,
+  picker = "telescope", -- 可选默认值："fzf"、"telescope" 或 "select"
   fidget = {
     max_queue = 5,
     margin_left = 1,
@@ -203,6 +204,18 @@ unsubscribe()
 ```
 
 订阅者可以使用 `exact`、`prefix` 或 Lua 模式 `fuzzy` 匹配标签。总线订阅者发生错误时会通过 `nvim_echo` 报告，不会递归产生新的通知。
+
+## Picker 集成
+
+`notify.picker()` 使用配置的 picker 或自动检测的后端打开通知历史。可在 `setup()` 中设置 `picker`，也可在单次调用中传入 `backend`；支持 `"fzf"`、`"telescope"` 和 `"select"`（`vim.ui.select`）。自动检测优先使用已加载的 Telescope，其次是 fzf-lua；都未加载时使用 `vim.ui.select`。
+
+```lua
+local notify = require("notify")
+notify.picker() -- 使用配置的后端，或自动检测
+notify.picker({ backend = "select", kind = "fidget" })
+```
+
+它分别读取普通通知和 Fidget 历史，显示可筛选的格式化条目，将完整记录预览为 Markdown，回车后在 buffer 中打开选中记录，并用 `Ctrl-Y` 复制消息。
 
 ## 界面职责
 

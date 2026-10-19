@@ -40,6 +40,7 @@
 ---@field style? string Built-in renderer name.
 ---@field stages? string|table|fun():string Animation stage name or phase selector.
 ---@field render? fun(buf: integer, record: notify.Record, hl: table, config: table): any
+---@field picker? string Default history picker: "fzf", "telescope", or "select".
 ---@field on_open? fun(win: integer, record: notify.Record)
 ---@field on_close? fun(win: integer, record: notify.Record)
 
@@ -118,6 +119,7 @@
 ---@field setup_progress fun(opts?: notify.FidgetConfig): boolean
 ---@field send fun(message: string|string[], level?: notify.Level, opts?: notify.Options): notify.Record|{ id: integer }
 ---@field restore fun()
+---@field picker fun(opts?: table)
 
 ---@class notify.Module
 local M = { _history = {}, _notifications = {}, _ids = {}, _next_id = 0, _bus_records = {}, _queue = {} }
@@ -1018,6 +1020,24 @@ end
 function M.send(message, level, opts)
 	opts = vim.tbl_extend("force", opts or {}, { source = "notify.send" })
 	return notify(message, level, opts)
+end
+
+function M.picker(opts)
+	opts = opts or {}
+	local backend = opts.backend or config.picker
+	if not backend then
+		if package.loaded["telescope.pickers"] then
+			backend = "telescope"
+		elseif package.loaded["fzf-lua"] then
+			backend = "fzf"
+		else
+			backend = "select"
+		end
+	end
+	local integrations = { fzf = "fzf", telescope = "telescope", select = "select" }
+	local module = integrations[backend]
+	assert(module, "unknown notify picker backend: " .. tostring(backend))
+	return require("notify.integrations." .. module).open(opts)
 end
 
 function M.restore()
