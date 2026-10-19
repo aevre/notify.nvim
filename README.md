@@ -213,7 +213,7 @@ notify.picker() -- configured backend, or auto-detected backend
 notify.picker({ backend = "select", kind = "fidget" })
 ```
 
-It reads ordinary and Fidget history independently, shows searchable formatted entries, previews the full record as Markdown, opens the selected record in a buffer, and copies the message with `Ctrl-Y`.
+It reads ordinary and Fidget history independently, shows searchable formatted entries, previews the full record as Markdown, and copies the selected message to the clipboard. In fzf, `Ctrl-Y` also copies the selected message.
 
 ## UI ownership
 

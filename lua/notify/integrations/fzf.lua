@@ -117,6 +117,14 @@ function M.format_entry(record, index, ansi_from_hl)
 end
 
 ---@param record table
+function M.copy_record(record)
+	local message = type(record.message) == "table" and table.concat(record.message, "\n") or record.message
+	vim.fn.setreg("+", message)
+	vim.fn.setreg('"', message)
+	vim.notify("Copied notification message", vim.log.levels.INFO, { hide_from_history = true })
+end
+
+---@param record table
 ---@param kind? string
 ---@return integer
 function M.open_record(record, kind)
@@ -186,18 +194,14 @@ function M.open(opts)
 			["default"] = function(selected)
 				local record = selected_record(selected)
 				if record then
-					M.open_record(record, kind)
+					M.copy_record(record)
 				end
 			end,
 			["ctrl-y"] = function(selected)
 				local record = selected_record(selected)
-				if not record then
-					return
+				if record then
+					M.copy_record(record)
 				end
-				local message = type(record.message) == "table" and table.concat(record.message, "\n") or record.message
-				vim.fn.setreg("+", message)
-				vim.fn.setreg('"', message)
-				vim.notify("Copied notification message", vim.log.levels.INFO)
 			end,
 		},
 	}, opts)

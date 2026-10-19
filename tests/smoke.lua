@@ -55,7 +55,7 @@ vim.ui.select = function(items, _, callback)
 end
 notify.picker({ backend = "select" })
 check(selected_items and selected_items[1]:find("Smoke", 1, true), "select picker displays searchable history")
-check(vim.bo.filetype == "markdown", "select picker opens Markdown history buffer")
+check(vim.fn.getreg("+") == "first message", "select picker copies selected message")
 vim.ui.select = original_select
 notify.setup({ animate = false, picker = "select" })
 local configured_backend_called = false

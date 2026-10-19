@@ -215,7 +215,7 @@ notify.picker() -- 使用配置的后端，或自动检测
 notify.picker({ backend = "select", kind = "fidget" })
 ```
 
-它分别读取普通通知和 Fidget 历史，显示可筛选的格式化条目，将完整记录预览为 Markdown，回车后在 buffer 中打开选中记录，并用 `Ctrl-Y` 复制消息。
+它分别读取普通通知和 Fidget 历史，显示可筛选的格式化条目，将完整记录预览为 Markdown，选择条目后会复制消息到剪贴板。在 fzf 中也可用 `Ctrl-Y` 复制消息。
 
 ## 界面职责
 

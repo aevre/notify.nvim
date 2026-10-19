@@ -39,7 +39,7 @@ function M.open(opts)
 					local entry = action_state.get_selected_entry()
 					actions.close(prompt_bufnr)
 					if entry then
-						source.open_record(entry.value, kind)
+						source.copy_record(entry.value)
 					end
 				end)
 				return true

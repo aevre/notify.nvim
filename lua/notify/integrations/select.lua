@@ -17,7 +17,7 @@ function M.open(opts)
 		{ prompt = kind == "fidget" and "Fidget History" or "Notifications" },
 		function(_, index)
 			if index then
-				source.open_record(items[index].raw, kind)
+				source.copy_record(items[index].raw)
 			end
 		end
 	)
