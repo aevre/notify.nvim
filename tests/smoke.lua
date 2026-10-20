@@ -291,6 +291,8 @@ local terminal = require("win")({
 check(terminal.backdrop and terminal.backdrop:valid(), "opaque terminal float creates a backdrop")
 local terminal_backdrop = terminal.backdrop.win
 local fidget = require("notify.fidget")
+vim.api.nvim_set_hl(0, "NotifyINFOBorder", { fg = "#123456", bg = "#202020" })
+vim.api.nvim_set_hl(0, "NotifyINFOIcon", { fg = "#abcdef" })
 fidget.clear_history()
 fidget.notify("Build finished", { title = "Build", icon = "✓", timeout = 100 })
 check(#fidget.history() == 1 and fidget.history()[1].source == "fidget", "fidget message history")
@@ -372,9 +374,16 @@ local namespace = vim.api.nvim_get_namespaces()["notify-progress"]
 local has_level_highlight = false
 for _, win in ipairs(fidget_wins) do
 	local buf = vim.api.nvim_win_get_buf(win)
-	has_level_highlight = has_level_highlight or #vim.api.nvim_buf_get_extmarks(buf, namespace, 0, -1, {}) > 0
+	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, namespace, 0, -1, { details = true })) do
+		has_level_highlight = has_level_highlight or mark[4].hl_group == "NotifyFidgetINFO"
+	end
 end
-check(has_level_highlight, "fidget highlights persist when stacked")
+local notify_level_hl = vim.api.nvim_get_hl(0, { name = "NotifyINFOIcon", link = false })
+local fidget_level_hl = vim.api.nvim_get_hl(0, { name = "NotifyFidgetINFO", link = false })
+check(
+	has_level_highlight and fidget_level_hl.fg == notify_level_hl.fg and fidget_level_hl.bg == nil,
+	"fidget level uses only the notify level foreground"
+)
 local has_event_icon = false
 for _, win in ipairs(fidget_wins) do
 	local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1]

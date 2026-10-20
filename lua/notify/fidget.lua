@@ -201,11 +201,12 @@ local function layout()
 		vim.api.nvim_buf_set_lines(task.win.buf, 0, -1, false, { line })
 		vim.bo[task.win.buf].modifiable = false
 		vim.api.nvim_set_hl(0, "NotifyFidgetBackground", { bg = "NONE" })
-		vim.api.nvim_set_hl(
-			0,
-			"NotifyFidgetLevel",
-			{ link = level ~= "none" and ("Notify" .. level .. "Border") or "NotifyProgressTask" }
-		)
+		local level_highlight = "NotifyProgressTask"
+		if level ~= "none" then
+			level_highlight = "NotifyFidget" .. level
+			local source = vim.api.nvim_get_hl(0, { name = "Notify" .. level .. "Icon", link = false })
+			vim.api.nvim_set_hl(0, level_highlight, { fg = source.fg })
+		end
 		local ns = vim.api.nvim_create_namespace("notify-progress")
 		vim.api.nvim_buf_clear_namespace(task.win.buf, ns, 0, -1)
 		local icon_start = 0
@@ -213,7 +214,7 @@ local function layout()
 			util.highlight(
 				task.win.buf,
 				ns,
-				task.spinner and "NotifyProgressSpinner" or "NotifyFidgetLevel",
+				task.spinner and "NotifyProgressSpinner" or level_highlight,
 				0,
 				icon_start,
 				icon_start + #icon
@@ -221,7 +222,7 @@ local function layout()
 		end
 		local tag_start = icon_start + #icon + (icon ~= "" and 2 or 0)
 		if tag ~= "" then
-			util.highlight(task.win.buf, ns, "NotifyFidgetLevel", 0, tag_start, tag_start + #tag - 2)
+			util.highlight(task.win.buf, ns, level_highlight, 0, tag_start, tag_start + #tag - 2)
 		end
 		local task_start = tag_start + #tag
 		local title = tostring(task.title or "Working")
