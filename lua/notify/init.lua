@@ -1108,7 +1108,6 @@ function M.restore()
 end
 
 M.bus = Bus
-M.setup({})
 return setmetatable(M, {
 	__call = function(_, ...)
 		return notify(...)

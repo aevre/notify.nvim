@@ -224,3 +224,7 @@ It reads ordinary and Fidget history independently, shows searchable formatted e
 ## UI ownership
 
 notify.nvim owns `vim.notify` and its notification history. If Noice is also installed, keep Noice's `notify.enabled` and `lsp.progress.enabled` options disabled so command-line and message UI remain with Noice without installing competing notification handlers.
+
+## Development
+
+Run `make check` from the repository root. The guarded `plugin/notify.lua` entrypoint applies defaults; requiring `notify` alone does not install handlers. Keep runtime bootstrapping out of `lua/notify/`, and keep `setup()` safe when a plugin manager applies user options afterward.
