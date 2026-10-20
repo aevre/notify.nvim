@@ -22,6 +22,12 @@ function M.setup(backend)
 				return
 			end
 			local opts = {
+				debug = {
+					source = "LSP",
+					client_name = client.name,
+					client_id = client.id,
+					token = params.token,
+				},
 				client_id = client.id,
 				token = params.token,
 				kind = value.kind,

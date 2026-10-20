@@ -24,6 +24,7 @@ notify.setup({
 	notify = false,
 	timeout = 40,
 	max_history = 20,
+	debug = true,
 	lsp_progress = false,
 })
 notify.dismiss({ pending = true })
@@ -46,6 +47,15 @@ local notification_records = notification_source.source()
 check(notification_records[1].raw == first, "notification source history")
 check(notification_records[1].display:find("Smoke", 1, true) ~= nil, "notification source display")
 check(notification_source.preview(first)[1] == "# Smoke", "notification source preview")
+check(first.debug.source == "vim.notify" and first.debug.tag == "notify", "debug metadata captures source and tag")
+check(
+	first.debug.stack and first.debug.stack[1].source:find("tests/smoke.lua", 1, true),
+	"debug metadata captures caller stack"
+)
+check(
+	vim.tbl_contains(notification_source.preview(first), "- **bus_id**: `" .. first.debug.bus_id .. "`"),
+	"picker preview exposes bus id"
+)
 check(notification_records[1].id == first.id, "picker source preserves record fields")
 local original_select = vim.ui.select
 local selected_items
@@ -57,7 +67,7 @@ notify.picker({ backend = "select" })
 check(selected_items and selected_items[1]:find("Smoke", 1, true), "select picker displays searchable history")
 check(vim.fn.getreg("+") == "first message", "select picker copies selected message")
 vim.ui.select = original_select
-notify.setup({ animate = false, picker = "select" })
+notify.setup({ animate = false, picker = "select", debug = true })
 local configured_backend_called = false
 local original_picker_select = vim.ui.select
 vim.ui.select = function(_, _, callback)
@@ -166,6 +176,29 @@ check(deferred_record and deferred.id == deferred_record.id, "fast-event notific
 notify.dismiss()
 notify.clear_history()
 
+local namespaced = vim.notify("writing", nil, { id = "cmdline.nvim:string:bufwrite", timeout = false })
+local namespaced_win = namespaced.win
+local history_size = #notify.history()
+vim.in_fast_event = function()
+	return true
+end
+vim.notify("written", nil, { id = "cmdline.nvim:string:bufwrite", timeout = false })
+vim.in_fast_event = original_in_fast_event
+check(
+	vim.wait(500, function()
+		return namespaced.message[1] == "written"
+	end),
+	"fast-event update by namespaced id"
+)
+check(namespaced.win == namespaced_win and #notify.history() == history_size, "id update preserves window and history")
+local independent = vim.notify("other producer", nil, { id = "other:bufwrite", timeout = false })
+check(independent ~= namespaced, "producer namespaces remain independent")
+notify.dismiss()
+local reopened = vim.notify("new write", nil, { id = "cmdline.nvim:string:bufwrite", timeout = false })
+check(reopened ~= namespaced and not reopened.closed, "closed id creates a new record")
+notify.dismiss()
+notify.clear_history()
+
 local received = {}
 local unsubscribe = notify.subscribe(
 	"notify-test-level",
@@ -203,7 +236,9 @@ check(failure_reported, "subscriber failure reporting")
 
 notify.setup({
 	animate = false,
+	debug = true,
 	routes = {
+		{ match = { exact = { "notify" }, message = { [[\vwritten|saved]] } }, to = "fidget" },
 		{ match = { exact = { "notify" }, source = "notify.send" }, to = "custom" },
 		{ match = { exact = { "route.test" } }, to = "custom" },
 	},
@@ -215,9 +250,32 @@ end, "custom")
 notify.bus.emit("notify", vim.log.levels.INFO, "vim source", {}, { source = "vim.notify" })
 notify.send("direct api", vim.log.levels.INFO, { timeout = false })
 notify.emit("route.test", vim.log.levels.INFO, "custom route")
+local fidget_history = require("notify.fidget").history()
+vim.notify("file written", vim.log.levels.INFO)
+vim.wait(100, function()
+	return #require("notify.fidget").history() > #fidget_history
+end)
+check(#require("notify.fidget").history() == #fidget_history + 1, "message pattern routes vim.notify to fidget")
+local routed_fidget = require("notify.fidget").history()[#fidget_history + 1]
+check(routed_fidget.source == "vim.notify", "Fidget routed history preserves original source")
+check(
+	routed_fidget.debug and routed_fidget.debug.stack and #routed_fidget.debug.stack > 0,
+	"Fidget routed history preserves caller stack"
+)
+check(
+	vim.tbl_contains(require("notify.integrations.fzf").preview(routed_fidget), "### Call Stack"),
+	"Fidget picker preview shows caller stack"
+)
 check(routed == 2, "source and tag routing")
 remove_routed()
-notify.setup({ animate = false, lsp_progress = true })
+notify.setup({
+	animate = false,
+	routes = {
+		{ match = { exact = { "notify" }, message = { [[\v\cwritten|saved]] } }, to = "fidget" },
+		{ match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
+	},
+	lsp_progress = true,
+})
 check(autocmd_count() > 0, "lsp progress setup")
 local original_termguicolors = vim.o.termguicolors
 local original_normal = vim.api.nvim_get_hl(0, { name = "Normal" })
@@ -364,12 +422,23 @@ local original_get_client = vim.lsp.get_client_by_id
 vim.lsp.get_client_by_id = function(id)
 	return id == client.id and client or nil
 end
+local lsp_history_before = #fidget.history()
 vim.api.nvim_exec_autocmds("LspProgress", {
 	data = {
 		client_id = client.id,
 		params = { token = "smoke", value = { kind = "begin", title = "Index", percentage = 10 } },
 	},
 })
+local lsp_record = fidget.history()[lsp_history_before + 1]
+check(
+	lsp_record.debug.client_name == "smoke" and lsp_record.debug.client_id == client.id,
+	"LSP progress history captures client"
+)
+check(lsp_record.debug.token == "smoke", "LSP progress history captures token")
+check(
+	vim.tbl_contains(require("notify.integrations.fzf").preview(lsp_record), "- **LSP Client**: `smoke` (#1)"),
+	"LSP progress picker preview shows client"
+)
 vim.wait(100, function()
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
 		local buf = vim.api.nvim_win_get_buf(win)

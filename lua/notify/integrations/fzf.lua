@@ -79,17 +79,50 @@ function M.preview(record)
 	if record.source then
 		lines[#lines + 1] = string.format("- **Source**: `%s`", record.source)
 	end
-	if record.source == "fidget" then
-		lines[#lines + 1] = string.format("- **State**: `%s`", record.state or "unknown")
-		if record.percentage ~= nil then
-			lines[#lines + 1] = string.format("- **Progress**: `%s%%`", record.percentage)
-		end
-	end
 	vim.list_extend(lines, { "", "## Message", "" })
 	if type(record.message) == "table" then
 		vim.list_extend(lines, record.message)
 	else
 		lines[#lines + 1] = tostring(record.message or "")
+	end
+	if record.debug or record.source == "fidget" then
+		lines[#lines + 1] = ""
+	end
+	if record.debug then
+		lines[#lines + 1] = ""
+		lines[#lines + 1] = "## Debug"
+		lines[#lines + 1] = ""
+		for _, key in ipairs({ "source", "tag", "bus_id", "user_id", "level" }) do
+			local value = record.debug[key]
+			if value ~= nil then
+				lines[#lines + 1] = string.format("- **%s**: `%s`", key, tostring(value))
+			end
+		end
+		if record.debug.client_name then
+			lines[#lines + 1] =
+				string.format("- **LSP Client**: `%s` (#%s)", record.debug.client_name, record.debug.client_id)
+		end
+		if record.debug.token then
+			lines[#lines + 1] = string.format("- **Progress Token**: `%s`", tostring(record.debug.token))
+		end
+		if record.debug.stack then
+			lines[#lines + 1] = ""
+			lines[#lines + 1] = "### Call Stack"
+			for _, frame in ipairs(record.debug.stack) do
+				lines[#lines + 1] = string.format(
+					"- `%s:%s`%s",
+					frame.source,
+					frame.line or "?",
+					frame.name and (" (" .. frame.name .. ")") or ""
+				)
+			end
+		end
+	end
+	if record.source == "fidget" then
+		lines[#lines + 1] = string.format("- **State**: `%s`", record.state or "unknown")
+		if record.percentage ~= nil then
+			lines[#lines + 1] = string.format("- **Progress**: `%s%%`", record.percentage)
+		end
 	end
 	return lines
 end

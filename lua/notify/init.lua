@@ -6,6 +6,7 @@
 ---@field prefix? string[]
 ---@field fuzzy? string[] Lua patterns matched against event tags.
 ---@field source? string
+---@field message? string[] Vim regular expressions matched against notification text.
 
 ---@class notify.Route
 ---@field match? notify.RouteMatch
@@ -20,6 +21,7 @@
 ---@field keep? boolean|fun(): boolean
 ---@field hide_from_history? boolean
 ---@field source? string
+---@field debug? boolean
 ---@field fidget? boolean|notify.FidgetConfig
 ---@field lsp_progress? boolean
 ---@field routes? notify.Route[]
@@ -807,6 +809,14 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		custom_render = opts.render,
 		created = util.now(),
 		closed = false,
+		debug = config.debug and {
+			source = opts.source or source,
+			bus_id = opts._bus_id,
+			tag = opts._bus_tag,
+			user_id = resolved_id,
+			level = level,
+			stack = opts._debug_stack,
+		} or nil,
 	}
 	M._history[#M._history + 1] = record
 	while #M._history > config.max_history do
@@ -842,6 +852,23 @@ end
 ---@return notify.Record|{ id: integer }
 local function notify(message, level, opts)
 	local meta = { level_provided = level ~= nil }
+	if config.debug then
+		local stack = {}
+		for frame = 2, 12 do
+			local info = debug.getinfo(frame, "Sln")
+			if not info then
+				break
+			end
+			if info.source ~= "=[C]" and not info.source:match("[/\\]notify[/\\](init|bus)%.lua$") then
+				stack[#stack + 1] = {
+					source = info.source,
+					line = info.currentline,
+					name = info.name,
+				}
+			end
+		end
+		meta.debug_stack = stack
+	end
 	if vim.in_fast_event() then
 		meta.fast = true
 		local old = find_record(opts and opts.replace) or find_record(opts and opts.id)
@@ -853,10 +880,12 @@ local function notify(message, level, opts)
 		end
 		meta.result = { id = meta.notify_id }
 		meta.source = (opts and opts.source) or "vim.notify"
+		opts = vim.tbl_extend("force", opts or {}, { _debug_stack = meta.debug_stack })
 		Bus.emit("notify", level_info(level or vim.log.levels.INFO).value, message, opts, meta)
 		return meta.result
 	end
 	meta.source = (opts and opts.source) or "vim.notify"
+	opts = vim.tbl_extend("force", opts or {}, { _debug_stack = meta.debug_stack })
 	local bus_id = Bus.emit("notify", level_info(level or vim.log.levels.INFO).value, message, opts, meta)
 	local record = M._bus_records[bus_id]
 	M._bus_records[bus_id] = nil
@@ -894,6 +923,7 @@ function M.setup(opts)
 	Fidget.restore()
 	LspProgress.restore()
 	Bus.unsubscribe("notify.nvim")
+	Bus.unsubscribe("notify.nvim.fidget")
 	Bus.set_routes(config.routes)
 	Bus.subscribe(
 		"notify.nvim",
@@ -905,10 +935,16 @@ function M.setup(opts)
 			if message.tag == "notify" and not message.meta.level_provided then
 				level = nil
 			end
+			local data = vim.tbl_extend("force", message.data or {}, {
+				_bus_id = message.id,
+				_bus_tag = message.tag,
+				_debug_stack = message.meta.debug_stack,
+				source = message.meta.source,
+			})
 			local record = notify_impl(
 				message.content,
 				level,
-				message.data or {},
+				data,
 				message.tag == "notify" and "notify" or "message",
 				message.meta.notify_id
 			)
@@ -921,6 +957,24 @@ function M.setup(opts)
 			end
 		end,
 		"notify"
+	)
+	Bus.subscribe(
+		"notify.nvim.fidget",
+		{ exact = { "notify" }, message = { ".*" } },
+		vim.log.levels.TRACE,
+		function(message)
+			local data = message.data or {}
+			Fidget.notify(message.content, {
+				title = data.title,
+				level = message.meta.level_provided and message.level or nil,
+				source = message.meta.source,
+				debug = message.meta.debug_stack,
+			})
+			if not message.meta.fast then
+				M._bus_records[message.id] = { id = message.id }
+			end
+		end,
+		"fidget"
 	)
 	local layout_group = vim.api.nvim_create_augroup("notify_layout", { clear = true })
 	vim.api.nvim_create_autocmd("VimResized", {

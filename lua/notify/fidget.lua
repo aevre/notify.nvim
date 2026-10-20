@@ -360,6 +360,7 @@ local function update_task_history(key, task, opts)
 			state = "active",
 			client_id = opts.client_id,
 			token = opts.token,
+			debug = opts.debug,
 		}
 		remember(task.history)
 	end
@@ -380,7 +381,8 @@ function M.notify(message, opts)
 	local title = opts.title or ""
 	local record = {
 		id = "fidget:" .. key,
-		source = "fidget",
+		source = opts.source or "fidget",
+		debug = opts.debug and { stack = opts.debug } or nil,
 		level = levels.name(opts.level),
 		title = { title, vim.fn.strftime("%T") },
 		message = vim.split(tostring(message), "\n", { plain = true }),

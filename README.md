@@ -69,6 +69,7 @@ require("notify").setup({
 | Option | Default | Description |
 | --- | --- | --- |
 | `timeout` | `3000` | Default display duration in milliseconds. A per-notification `timeout = false` keeps that notification open until dismissed. |
+| `debug` | `false` | Store bus source, tag, ID, level, and caller stack metadata on records and show it in picker previews. |
 | `max_width` | `0.4` | Maximum outer window width. A number below `1` is a fraction of the editor width; a number at least `1` is a column count. |
 | `min_width` | `40` | Minimum notification width in columns, including padding. |
 | `max_height` | `0.6` | Maximum notification height. A number below `1` is a fraction of the editor height; a number at least `1` is a row count. |
@@ -133,7 +134,8 @@ Notifications stack at the top-right. Fidget tasks use separate content-width, b
 
 Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`.
 
-- Reusing an `id` replaces the existing record and window. `replace` accepts an existing ID or record.
+- `id` accepts a string or number. Reusing it updates the active record and window without adding a history entry; after the notification closes, the same ID creates a new record. Use producer prefixes such as `cmdline.nvim:string:bufwrite` to avoid collisions.
+- `replace` accepts an existing ID or record and takes precedence when it resolves to an active notification; `id` can assign that record a new user ID. These options extend the standard `vim.notify(message, level, opts)` signature; other providers may ignore them. Producers must merge UI2 `append` and `replace_last` updates before forwarding text.
 - `keep` may be a boolean or a predicate that postpones timeout dismissal while it returns true.
 - `hide_from_history` omits a record unless `history({ include_hidden = true })` is used.
 - `on_open` and `on_close` receive the window ID and record.
@@ -153,13 +155,13 @@ notify.clear_history()
 notify.restore()
 ```
 
-The module is callable as `notify.notify(message, level, opts)`. History records expose `id`, uppercase `level`, `level_name`, `level_value`, `title`, `message`, `time`, and lifecycle state. Records with `hide_from_history = true` are excluded unless `history({ include_hidden = true })` is used.
+The module is callable as `notify.notify(message, level, opts)`. History records expose `id`, uppercase `level`, `level_name`, `level_value`, `title`, `message`, `time`, and lifecycle state. Records with `hide_from_history = true` are excluded unless `history({ include_hidden = true })` is used. With `debug = true`, notification records include bus metadata and the `vim.notify()` caller stack (source file, line, and function when available); the history picker shows them in a Debug section.
 
 ### Event bus
 
 - Subscribers may register a backend name as the fifth argument. Configured routes select which named subscriber receives each event; the first matching route wins.
-- `match` supports `exact`, `prefix`, and Lua-pattern `fuzzy` selectors, plus an optional `source` filter. `to` accepts one backend name or a list.
-- Without custom routes, `vim.notify`, `notify.send()`, and `msg.show.*` go to the notification backend. Fidget uses its direct API rather than a bus subscription.
+- `match` supports `exact`, `prefix`, and Lua-pattern `fuzzy` selectors for event tags, an optional `source` filter, and `message` Vim regular expressions for matching string content (via Neovim's `vim.regex()`). Tag and source selectors are combined with the message selector; arrays within a selector use any-match semantics. Use Vim regex syntax, for example `[[\v\cwritten|saved]]`; invalid patterns are ignored. `to` accepts one backend name or a list.
+- Without custom routes, `vim.notify`, `notify.send()`, and `msg.show.*` go to the notification backend. The `fidget` backend routes `vim.notify` messages through `notify.fidget.notify()`.
 - With custom routes, unmatched events are not sent to named subscribers. Unnamed subscribers still receive events.
 
 `vim.notify` emits the `notify` tag with source `vim.notify`; `notify.send()` uses the same tag with source `notify.send`.
@@ -176,6 +178,7 @@ The module is callable as `notify.notify(message, level, opts)`. History records
 local notify = require("notify")
 notify.setup({
   routes = {
+    { match = { exact = { "notify" }, message = { [[\v\cwritten|saved]] } }, to = "fidget" },
     { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
     { match = { exact = { "notify" }, source = "notify.send" }, to = "notify" },
     { match = { prefix = { "build." } }, to = "notify" },

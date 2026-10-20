@@ -83,6 +83,7 @@ require("notify").setup({
 | `stages` | `"fade_in_slide_out"` | 动画预设：`fade`、`slide`、`slide_out`、`fade_in_slide_out` 或 `static`。也可以使用表按阶段关闭 `open`、`layout`、`close`，或使用函数返回预设/阶段表。 |
 | `animation` | `{ duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 }` | 传给 animate.nvim 的时长、缓动和帧率。`duration` 可以是数字，也可以是 `{ step, total }` 表。 |
 | `routes` | `nil` | 按顺序匹配的 bus 路由。没有自定义路由时，内置路由将 `vim.notify`、`notify.send()` 和 `msg.show.*` 发送到通知后端。 |
+| `debug` | `false` | 在通知记录中保存 bus 来源、标签、ID、级别和调用栈，并在 picker 预览中显示。 |
 | `fidget` | `nil` | Fidget 配置，见下方的 Fidget 小节，包括任务容量、边距、超时和 spinner。 |
 | `icons` | `{}` | 可选的级别图标覆盖表，键为 `TRACE`、`DEBUG`、`INFO`、`WARN` 或 `ERROR`；未指定的级别使用内置图标。 |
 | `lsp_progress` | `false` | 订阅 Neovim `LspProgress` 事件，并通过 `notify.fidget.progress()` 渲染。 |
@@ -130,7 +131,8 @@ Fidget 是通用消息界面。独立的 LSP progress producer 会直接向它�
 
 单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。
 
-- 重用 `id` 会替换已有记录和窗口；`replace` 可以接收已有 ID 或记录。
+- `id` 支持字符串或数字。重用 ID 会更新仍然有效的记录和窗口，不增加历史条目；通知关闭后，相同 ID 会创建新记录。建议使用 `cmdline.nvim:string:bufwrite` 等带来源前缀的 ID，避免冲突。
+- `replace` 可以接收已有 ID 或记录，匹配到有效通知时优先使用；`id` 可以为该记录指定新的用户 ID。这些选项是标准 `vim.notify(message, level, opts)` 签名上的扩展，其他 provider 可以忽略它们。调用方应先合并 UI2 的 `append` 和 `replace_last` 更新，再转发文本。
 - `keep` 可以是布尔值，也可以是返回布尔值、用于推迟关闭的函数。
 - `hide_from_history` 会将记录从默认历史中隐藏，使用 `history({ include_hidden = true })` 才会包含它。
 - `on_open` 和 `on_close` 会收到窗口 ID 与记录。
@@ -150,13 +152,13 @@ notify.clear_history()
 notify.restore()
 ```
 
-模块可以直接调用，等价于 `notify.notify(message, level, opts)`。历史记录包含 `id`、大写的 `level`、`level_name`、`level_value`、`title`、`message`、`time` 和当前生命周期状态。设置 `hide_from_history = true` 的记录默认会被排除；传入 `{ include_hidden = true }` 给 `history()` 可包含这些记录。
+模块可以直接调用，等价于 `notify.notify(message, level, opts)`。历史记录包含 `id`、大写的 `level`、`level_name`、`level_value`、`title`、`message`、`time` 和当前生命周期状态。设置 `hide_from_history = true` 的记录默认会被排除；传入 `{ include_hidden = true }` 给 `history()` 可包含这些记录。启用 `debug = true` 后，通知记录会附带 bus 元数据和 `vim.notify()` 调用栈（可用时包含文件、行号和函数名），历史 picker 会在 Debug 区域展示这些信息。
 
 ### 事件总线
 
 - 订阅时可将后端名作为第五个参数；配置路由后，第一条命中的路由决定哪个命名订阅者接收事件。
-- `match` 支持 `exact`、`prefix`、Lua 模式 `fuzzy` 和可选的 `source` 来源过滤；`to` 可指定单个后端名或后端列表。
-- 未配置自定义路由时，`vim.notify`、`notify.send()` 和 `msg.show.*` 事件发送到通知后端。Fidget 通过独立 API 提供，而不是作为 bus 订阅者。
+- `match` 支持用 `exact`、`prefix` 和 Lua 模式 `fuzzy` 匹配事件标签，用 `message` Vim 正则匹配字符串消息内容，并可选按 `source` 过滤；`to` 可指定单个后端名或后端列表。正则由 Neovim 的 `vim.regex()` 编译，例如 `[[\v\c已写入|written]]`；非法模式会忽略。
+- 未配置自定义路由时，`vim.notify`、`notify.send()` 和 `msg.show.*` 事件发送到通知后端。`fidget` 后端会调用 `notify.fidget.notify()` 显示 `vim.notify` 消息。
 - 使用自定义路由时，未命中的消息不会发送到命名订阅者；未命名的订阅者仍可收到事件。
 
 `vim.notify` 使用 `notify` 标签和 `vim.notify` 来源；`notify.send()` 使用相同标签、来源为 `notify.send`。
@@ -173,6 +175,7 @@ notify.restore()
 local notify = require("notify")
 notify.setup({
   routes = {
+    { match = { exact = { "notify" }, message = { [[\v已写入|written]] } }, to = "fidget" },
     { match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
     { match = { exact = { "notify" }, source = "notify.send" }, to = "notify" },
     { match = { prefix = { "build." } }, to = "notify" },

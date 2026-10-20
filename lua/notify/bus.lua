@@ -1,5 +1,8 @@
 ---@class notify.BusMeta
 ---@field source? string
+---@field level_provided? boolean
+---@field notify_id? integer|string
+---@field fast? boolean
 ---@field fast? boolean
 ---@field level_provided? boolean
 ---@field notify_id? integer
@@ -14,6 +17,7 @@
 local M = { subscribers = {}, queue = {}, dispatching = false, next_id = 0 }
 
 local util = require("notify.util")
+local message_regexes = {}
 
 local function level_value(level)
 	if type(level) == "number" then
@@ -25,26 +29,38 @@ local function level_value(level)
 	return vim.log.levels.INFO
 end
 
-local function matches(interested, tag)
-	if not interested.exact and not interested.prefix and not interested.fuzzy then
-		return true
-	end
+local function matches(interested, tag, content)
+	local tag_matched = not interested.exact and not interested.prefix and not interested.fuzzy
 	for _, value in ipairs(interested.exact or {}) do
-		if tag == value then
-			return true
-		end
+		tag_matched = tag_matched or tag == value
 	end
 	for _, value in ipairs(interested.prefix or {}) do
-		if vim.startswith(tag, value) then
-			return true
-		end
+		tag_matched = tag_matched or vim.startswith(tag, value)
 	end
 	for _, value in ipairs(interested.fuzzy or {}) do
-		if tag:match(value) then
-			return true
-		end
+		tag_matched = tag_matched or tag:match(value) ~= nil
 	end
-	return false
+	if not tag_matched then
+		return false
+	end
+	if interested.message then
+		if type(content) ~= "string" then
+			return false
+		end
+		for _, pattern in ipairs(interested.message) do
+			local regex = message_regexes[pattern]
+			if regex == nil then
+				local ok, compiled = pcall(vim.regex, pattern)
+				regex = ok and compiled or false
+				message_regexes[pattern] = regex
+			end
+			if regex and regex:match_str(content) then
+				return true
+			end
+		end
+		return false
+	end
+	return true
 end
 
 ---@param routes? notify.Route[]
@@ -64,7 +80,10 @@ local function routed_to(subscriber, message)
 		}
 	for _, route in ipairs(routes) do
 		local selector = route.match or {}
-		if matches(selector, message.tag) and (not selector.source or selector.source == message.meta.source) then
+		if
+			matches(selector, message.tag, message.content)
+			and (not selector.source or selector.source == message.meta.source)
+		then
 			if type(route.to) == "string" then
 				if route.to == subscriber.backend then
 					return true
@@ -119,7 +138,7 @@ local function drain()
 		for _, subscriber in pairs(M.subscribers) do
 			if
 				message.level >= subscriber.min_level
-				and matches(subscriber.interested, message.tag)
+				and matches(subscriber.interested, message.tag, message.content)
 				and routed_to(subscriber, message)
 			then
 				local ok, err = pcall(subscriber.handler, message)
