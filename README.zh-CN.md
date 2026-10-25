@@ -7,21 +7,21 @@
 ## 环境要求
 
 - Neovim 0.10 或更新版本。
-- [win.nvim](https://codeberg.org/aevre/win.nvim)。
-- [animate.nvim](https://codeberg.org/aevre/animate.nvim)。
+- [win.nvim](https://github.com/aevre/win.nvim)。
+- [animate.nvim](https://github.com/aevre/animate.nvim)。
 
 ## 安装
 
-项目托管于 Codeberg：<https://codeberg.org/aevre/notify.nvim>。
+同时托管于 Codeberg：<https://codeberg.org/aevre/notify.nvim> 和 GitHub：<https://github.com/aevre/notify.nvim>。
 
 使用 lazy.nvim：
 
 ```lua
 {
-  "https://codeberg.org/aevre/notify.nvim",
+  "https://github.com/aevre/notify.nvim",
   dependencies = {
-    "https://codeberg.org/aevre/win.nvim",
-    "https://codeberg.org/aevre/animate.nvim",
+    "https://github.com/aevre/win.nvim",
+    "https://github.com/aevre/animate.nvim",
   },
   opts = {},
 }

@@ -7,21 +7,21 @@ A small standalone notification UI and event bus for Neovim. It replaces `vim.no
 ## Requirements
 
 - Neovim 0.10 or newer.
-- [win.nvim](https://codeberg.org/aevre/win.nvim).
-- [animate.nvim](https://codeberg.org/aevre/animate.nvim).
+- [win.nvim](https://github.com/aevre/win.nvim).
+- [animate.nvim](https://github.com/aevre/animate.nvim).
 
 ## Installation
 
-The canonical repository is hosted on Codeberg: <https://codeberg.org/aevre/notify.nvim>.
+Available on Codeberg: <https://codeberg.org/aevre/notify.nvim> and GitHub: <https://github.com/aevre/notify.nvim>.
 
 With lazy.nvim:
 
 ```lua
 {
-  "https://codeberg.org/aevre/notify.nvim",
+  "https://github.com/aevre/notify.nvim",
   dependencies = {
-    "https://codeberg.org/aevre/win.nvim",
-    "https://codeberg.org/aevre/animate.nvim",
+    "https://github.com/aevre/win.nvim",
+    "https://github.com/aevre/animate.nvim",
   },
   opts = {},
 }
