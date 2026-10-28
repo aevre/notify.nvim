@@ -118,6 +118,22 @@ local replaced = vim.notify("replaced message", vim.log.levels.ERROR, {
 check(replaced == first and replaced.level == "ERROR", "replacement by string id")
 check(#notify.history() == 2, "replacement should not duplicate history")
 
+notify.setup({ animate = false, merge_duplicates = 100 })
+local duplicate = vim.notify("duplicate message", vim.log.levels.WARN, { title = "Duplicate", timeout = 10 })
+local duplicate_again = vim.notify("duplicate message", vim.log.levels.WARN, { title = "Duplicate", timeout = 10 })
+check(duplicate_again == duplicate, "identical notifications merge within the configured window")
+check(#notify.history() == 3, "merged notification should not duplicate history")
+local different_duplicate = vim.notify("duplicate message", vim.log.levels.ERROR, {
+	title = "Duplicate",
+	timeout = 10,
+})
+check(different_duplicate ~= duplicate, "notification level is part of duplicate identity")
+vim.wait(250, function()
+	return duplicate.closed and different_duplicate.closed
+end, 10)
+check(duplicate.closed and different_duplicate.closed, "duplicate test notifications expire")
+notify.setup({ animate = false })
+
 local replaced_by_record = vim.notify("replaced again", nil, {
 	replace = first,
 	timeout = false,

@@ -46,6 +46,7 @@ require("notify").setup({
   animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
   max_history = 200,
   max_queue = 5,
+  merge_duplicates = false, -- 毫秒，例如 500
   top_down = true,
   icons = { INFO = "ℹ", WARN = "⚠" },
   lsp_progress = true,
@@ -78,6 +79,7 @@ require("notify").setup({
 | `top_down` | `true` | 为 true 时从顶部堆叠；为 false 时从底部向上堆叠。 |
 | `max_history` | `200` | 内存中保留的通知历史记录数量上限。 |
 | `max_queue` | `5` | 同时显示的通知窗口数量上限，额外通知按到达顺序排队。 |
+| `merge_duplicates` | `false` | 在指定毫秒内，标题、级别和正文完全相同时复用仍未关闭的通知；复用时重新开始超时计时，历史中只保留一条记录。 |
 | `animate` | `true` | 通知过渡和重新堆叠动画的总开关。 |
 | `style` | `"default"` | renderer 名称：`default`、`minimal`、`simple`、`compact`、`wrapped-compact` 或 `wrapped-default`。 |
 | `stages` | `"fade_in_slide_out"` | 动画预设：`fade`、`slide`、`slide_out`、`fade_in_slide_out` 或 `static`。也可以使用表按阶段关闭 `open`、`layout`、`close`，或使用函数返回预设/阶段表。 |

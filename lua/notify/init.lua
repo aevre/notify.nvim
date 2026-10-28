@@ -36,6 +36,7 @@
 ---@field top_down? boolean
 ---@field max_history? integer
 ---@field max_queue? integer
+---@field merge_duplicates? integer|false Merge identical notifications within this many milliseconds.
 ---@field animate? boolean
 ---@field animation? table
 ---@field notify? boolean
@@ -90,6 +91,7 @@
 ---@field top_down boolean
 ---@field max_history integer
 ---@field max_queue integer
+---@field merge_duplicates integer|false
 ---@field animation table
 ---@field style string
 ---@field stages any
@@ -144,6 +146,7 @@ local defaults = {
 	top_down = true,
 	max_history = 200,
 	max_queue = 5,
+	merge_duplicates = false,
 	animate = true,
 	stages = "fade_in_slide_out",
 	animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
@@ -733,11 +736,29 @@ end
 local function notify_impl(message, level, opts, source, reserved_id)
 	opts = opts or {}
 	local info, level_name = level_info(level or vim.log.levels.INFO)
+	local lines = make_lines(message)
+	local title = title_text(opts.title, source == "notify" and "Notification" or "Messages")
 	local resolved_id = opts.id ~= nil and normalize_id(opts.id) or normalize_id(opts.replace)
 	local old = find_record(opts.replace) or find_record(opts.id)
-	if old and (opts.replace ~= nil or opts.id ~= nil) then
+	local duplicate = false
+	if not old and opts.id == nil and opts.replace == nil and type(config.merge_duplicates) == "number" then
+		local now = util.now()
+		for _, candidate in pairs(M._notifications) do
+			if
+				not candidate.closed
+				and now - candidate.created <= config.merge_duplicates
+				and candidate.level_name == level_name
+				and candidate.title[1] == title
+				and vim.deep_equal(candidate.message, lines)
+			then
+				old, duplicate = candidate, true
+				break
+			end
+		end
+	end
+	if old and (duplicate or opts.replace ~= nil or opts.id ~= nil) then
 		if message == nil then
-			message = old.message
+			lines = old.message
 		end
 		if level == nil then
 			info, level_name = level_info(old.level)
@@ -753,7 +774,7 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		old.closed = true
 		util.stop_timer(old.timer)
 		old.timer = nil
-		old.message = make_lines(message)
+		old.message = lines
 		old.level, old.level_name, old.level_value = level_name, level_name, info.value
 		old.title = { title_text(opts.title, old.title[1]), vim.fn.strftime("%T") }
 		if opts.icon ~= nil then
@@ -790,10 +811,9 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		M._next_id = M._next_id + 1
 	end
 	local id = reserved_id or M._next_id
-	local title = title_text(opts.title, source == "notify" and "Notification" or "Messages")
 	local record = {
 		id = id,
-		message = make_lines(message),
+		message = lines,
 		level = level_name,
 		level_name = level_name,
 		level_value = info.value,

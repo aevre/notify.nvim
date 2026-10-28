@@ -46,6 +46,7 @@ require("notify").setup({
   animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
   max_history = 200,
   max_queue = 5,
+  merge_duplicates = false, -- milliseconds, for example 500
   top_down = true,
   icons = { INFO = "ℹ", WARN = "⚠" },
   lsp_progress = true,
@@ -80,6 +81,7 @@ require("notify").setup({
 | `top_down` | `true` | Stack from the top when true; stack upward from the bottom when false. |
 | `max_history` | `200` | Maximum number of notification records retained in memory. |
 | `max_queue` | `5` | Maximum number of visible notification windows. Additional notifications wait in arrival order. |
+| `merge_duplicates` | `false` | Reuse an open notification when its title, level, and message are identical within this many milliseconds. The reused notification's timeout restarts and history keeps one record. |
 | `animate` | `true` | Master switch for notification transitions and animated restacking. |
 | `style` | `"default"` | Renderer name: `default`, `minimal`, `simple`, `compact`, `wrapped-compact`, or `wrapped-default`. |
 | `stages` | `"fade_in_slide_out"` | Transition preset: `fade`, `slide`, `slide_out`, `fade_in_slide_out`, or `static`. A table can independently disable `open`, `layout`, or `close` by setting that phase to `false`; a function may return a preset or such a table. |
