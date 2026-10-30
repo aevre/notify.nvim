@@ -3,9 +3,6 @@
 ---@field level_provided? boolean
 ---@field notify_id? integer|string
 ---@field fast? boolean
----@field fast? boolean
----@field level_provided? boolean
----@field notify_id? integer
 ---@field [string] any
 
 ---@class notify.BusSubscriber

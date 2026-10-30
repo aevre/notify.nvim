@@ -27,7 +27,7 @@ With lazy.nvim:
 }
 ```
 
-The plugin calls `setup()` with defaults when it is first required. Configure it through your plugin manager or call `require("notify").setup(opts)`.
+The guarded `plugin/notify.lua` entrypoint calls `setup()` with defaults. Requiring `notify` alone has no side effects. Configure it through your plugin manager or call `require("notify").setup(opts)`.
 
 ## Configuration
 
@@ -229,4 +229,4 @@ notify.nvim owns `vim.notify` and its notification history. If Noice is also ins
 
 ## Development
 
-Run `make check` from the repository root. The guarded `plugin/notify.lua` entrypoint applies defaults; requiring `notify` alone does not install handlers. Keep runtime bootstrapping out of `lua/notify/`, and keep `setup()` safe when a plugin manager applies user options afterward.
+Run `make check` from the repository root; it runs formatting, lint, and headless smoke tests. The guarded `plugin/notify.lua` entrypoint applies defaults; requiring `notify` alone does not install handlers. Keep runtime bootstrapping out of `lua/notify/`, and keep `setup()` safe when a plugin manager applies user options afterward.

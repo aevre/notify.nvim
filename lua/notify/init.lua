@@ -43,9 +43,23 @@
 ---@field style? string Built-in renderer name.
 ---@field stages? string|table|fun():string Animation stage name or phase selector.
 ---@field render? fun(buf: integer, record: notify.Record, hl: table, config: table): any
+---@field _bus_id? integer|string
+---@field _bus_tag? string
+---@field _debug_stack? string[]
 ---@field picker? string Default history picker: "fzf", "telescope", or "select".
 ---@field on_open? fun(win: integer, record: notify.Record)
 ---@field on_close? fun(win: integer, record: notify.Record)
+
+---@class notify.DebugInfo
+---@field source? string
+---@field tag? string
+---@field bus_id? integer
+---@field user_id? integer|string
+---@field level? notify.Level
+---@field stack? string[]
+---@field client_name? string
+---@field client_id? integer
+---@field token? string|integer
 
 ---@class notify.Record
 ---@field id integer
@@ -68,8 +82,13 @@
 ---@field win? win
 ---@field namespace? integer
 ---@field custom_render? fun(buf: integer, record: notify.Record, hl: table, config: table)
+---@field debug? notify.DebugInfo
+---@field source? string
 ---@field on_open? fun(win: integer, record: notify.Record)
 ---@field on_close? fun(win: integer, record: notify.Record)
+
+---@class notify.BusRecord
+---@field id integer
 
 ---@class notify.BusMessage
 ---@field id integer
@@ -95,7 +114,7 @@
 ---@field animation table
 ---@field style string
 ---@field stages any
----@field render fun():fun(buf: integer, record: notify.Record)
+---@field render fun(buf: integer, record: notify.Record, hl: table, config: table): any
 ---@field icons table<string, string>
 ---@field _max_width number
 ---@field _max_height number
@@ -108,7 +127,7 @@
 ---@field _notifications table<integer, notify.Record>
 ---@field _ids table<integer|string, integer>
 ---@field _next_id integer
----@field _bus_records table<integer, notify.Record>
+---@field _bus_records table<integer, notify.Record|notify.BusRecord>
 ---@field _queue notify.Record[]
 ---@field setup fun(opts?: notify.Options): notify.Module
 ---@field notify fun(message: string|string[], level?: notify.Level, opts?: notify.Options): notify.Record|{ id: integer }
@@ -731,7 +750,7 @@ end
 ---@param level? notify.Level
 ---@param opts? notify.Options
 ---@param source string
----@param reserved_id? integer
+---@param reserved_id? integer|string
 ---@return notify.Record
 local function notify_impl(message, level, opts, source, reserved_id)
 	opts = opts or {}
@@ -805,12 +824,13 @@ local function notify_impl(message, level, opts, source, reserved_id)
 			or nil
 		return old
 	end
-	if reserved_id then
+	if type(reserved_id) == "number" then
 		M._next_id = math.max(M._next_id, reserved_id)
 	else
 		M._next_id = M._next_id + 1
 	end
-	local id = reserved_id or M._next_id
+	---@type integer
+	local id = type(reserved_id) == "number" and reserved_id or M._next_id
 	local record = {
 		id = id,
 		message = lines,
@@ -991,6 +1011,7 @@ function M.setup(opts)
 				debug = message.meta.debug_stack,
 			})
 			if not message.meta.fast then
+				---@type notify.BusRecord
 				M._bus_records[message.id] = { id = message.id }
 			end
 		end,

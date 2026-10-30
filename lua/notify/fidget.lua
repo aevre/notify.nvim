@@ -21,12 +21,15 @@
 ---@field spinner? boolean|string[] Enable animation or provide its frames.
 ---@field spinner_frames? string[] Override the spinner frames for this task.
 ---@field spinner_interval? integer Override the frame duration in milliseconds.
+---@field debug? string[]
 
 ---@class notify.FidgetMessageOpts
 ---@field title? string
 ---@field level? notify.Level
 ---@field icon? string
 ---@field timeout? integer
+---@field source? string
+---@field debug? string[]
 
 ---@class notify.FidgetTaskOpts
 ---@field token? string
@@ -66,6 +69,7 @@ local util = require("notify.util")
 ---@field client_id? integer|string
 ---@field token? string|integer
 ---@field percentage? number
+---@field debug? notify.DebugInfo
 
 ---@class notify.FidgetEntry
 ---@field key string

@@ -27,7 +27,7 @@
 }
 ```
 
-第一次 `require("notify")` 时，插件会使用默认配置调用 `setup()`。可以通过插件管理器配置，或者直接调用 `require("notify").setup(opts)`。
+带 guard 的 `plugin/notify.lua` 入口会使用默认配置调用 `setup()`；单独 `require("notify")` 不会产生副作用。可以通过插件管理器配置，或者直接调用 `require("notify").setup(opts)`。
 
 ## 配置
 
@@ -228,4 +228,4 @@ notify.nvim 负责 `vim.notify` 和通知历史。如果同时安装 Noice，应
 
 ## 开发
 
-在仓库根目录运行 `make check`。带 guard 的 `plugin/notify.lua` 入口应用默认配置；仅 `require("notify")` 不会安装处理器。runtime 启动逻辑不得放入 `lua/notify/`，且插件管理器随后应用用户选项时，`setup()` 必须保持安全。
+在仓库根目录运行 `make check`，它会执行格式检查、lint 和 headless smoke 测试。带 guard 的 `plugin/notify.lua` 入口应用默认配置；仅 `require("notify")` 不会安装处理器。runtime 启动逻辑不得放入 `lua/notify/`，且插件管理器随后应用用户选项时，`setup()` 必须保持安全。
