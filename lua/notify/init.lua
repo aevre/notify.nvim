@@ -1000,7 +1000,7 @@ function M.setup(opts)
 	)
 	Bus.subscribe(
 		"notify.nvim.fidget",
-		{ exact = { "notify" }, message = { ".*" } },
+		{ exact = { "notify" }, prefix = { "msg.show." }, message = { ".*" } },
 		vim.log.levels.TRACE,
 		function(message)
 			local data = message.data or {}

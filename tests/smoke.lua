@@ -255,6 +255,7 @@ notify.setup({
 	debug = true,
 	routes = {
 		{ match = { exact = { "notify" }, message = { [[\vwritten|saved]] } }, to = "fidget" },
+		{ match = { prefix = { "msg.show." }, message = { [[\vline changed]] } }, to = "fidget" },
 		{ match = { exact = { "notify" }, source = "notify.send" }, to = "custom" },
 		{ match = { exact = { "route.test" } }, to = "custom" },
 	},
@@ -283,6 +284,14 @@ check(
 	"Fidget picker preview shows caller stack"
 )
 check(routed == 2, "source and tag routing")
+local notification_count = #notify.history()
+local fidget_count = #require("notify.fidget").history()
+notify.emit("msg.show.write-summary", vim.log.levels.INFO, "1 line changed; before #1005")
+vim.wait(100, function()
+	return #require("notify.fidget").history() > fidget_count
+end)
+check(#notify.history() == notification_count, "msg.show route skips notification backend")
+check(#require("notify.fidget").history() == fidget_count + 1, "msg.show route reaches fidget backend")
 remove_routed()
 notify.setup({
 	animate = false,
