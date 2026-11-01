@@ -18,6 +18,15 @@ end
 
 local original_notify = vim.notify
 local notify = require("notify")
+local util = require("notify.util")
+local highlight_buf = vim.api.nvim_create_buf(false, true)
+local highlight_ns = vim.api.nvim_create_namespace("notify-smoke-highlight")
+vim.api.nvim_buf_set_lines(highlight_buf, 0, -1, false, { "短文" })
+util.highlight(highlight_buf, highlight_ns, "Normal", 0, 0, 100)
+util.highlight(highlight_buf, highlight_ns, "Normal", 0, 100, 101)
+local highlight_marks = vim.api.nvim_buf_get_extmarks(highlight_buf, highlight_ns, 0, -1, { details = true })
+check(#highlight_marks == 1 and highlight_marks[1][4].end_col == #"短文", "highlight columns clamp to line")
+vim.api.nvim_buf_delete(highlight_buf, { force = true })
 
 notify.setup({
 	animate = false,

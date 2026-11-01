@@ -22,8 +22,12 @@ end
 ---@param start_col integer
 ---@param end_col integer
 function M.highlight(buf, ns, group, row, start_col, end_col)
+	local line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1]
+	if not line or start_col >= #line then
+		return
+	end
 	vim.api.nvim_buf_set_extmark(buf, ns, row, start_col, {
-		end_col = end_col,
+		end_col = math.min(end_col, #line),
 		hl_group = group,
 	})
 end
