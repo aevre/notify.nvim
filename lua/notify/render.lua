@@ -75,7 +75,7 @@ function M.render(record, config, highlights, helpers)
 	end
 	-- 自定义 renderer 的虚拟文本同样参与尺寸计算。
 	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })) do
-		local details = mark[4]
+		local details = mark[4] or {}
 		if details.virt_text then
 			local size = details.virt_text_win_col or 0
 			for _, chunk in ipairs(details.virt_text) do

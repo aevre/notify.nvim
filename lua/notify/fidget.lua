@@ -41,11 +41,16 @@
 
 local M = {}
 
----@type win
 local View = require("notify.fidget.view")
 local levels = require("notify.levels")
 local util = require("notify.util")
 ---@class notify.FidgetTask
+---@field sequence integer
+---@field timer? integer|uv.uv_timer_t
+---@field timeout? integer
+---@field target_row? number
+---@field line? string
+---@field content_key? string
 ---@field started number
 ---@field title? string
 ---@field message? string

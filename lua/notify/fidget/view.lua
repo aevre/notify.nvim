@@ -1,3 +1,4 @@
+---@class notify.FidgetView
 local M = {}
 local Win = require("win")
 local levels = require("notify.levels")

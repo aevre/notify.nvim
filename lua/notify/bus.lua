@@ -79,10 +79,11 @@ local function route_targets(message)
 			and (not selector.source or selector.source == message.meta.source)
 		then
 			local targets = {}
-			if type(route.to) == "string" then
-				targets[route.to] = true
+			local destination = route.to
+			if type(destination) == "string" then
+				targets[destination] = true
 			else
-				for _, target in ipairs(route.to) do
+				for _, target in ipairs(destination) do
 					targets[target] = true
 				end
 			end
