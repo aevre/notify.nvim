@@ -334,7 +334,35 @@ local function visible()
 	return result
 end
 
----@return table<integer, integer>
+local function has_exiting()
+	for _, record in ipairs(visible()) do
+		if record.closed then
+			return true
+		end
+	end
+	return false
+end
+
+local function available_row(record)
+	local border = config.border == "none" and 0 or 2
+	local row = config.top_down and config.margin.top
+		or vim.o.lines - vim.o.cmdheight - config.margin.bottom - record.height - border
+	for _, item in ipairs(visible()) do
+		if config.top_down then
+			row = math.max(row, item.frame.row + math.max(item.frame.height, item.height) + border + config.gap)
+		else
+			row = math.min(row, item.frame.row - record.height - border - config.gap)
+		end
+	end
+	if
+		row < config.margin.top
+		or row + record.height + border > vim.o.lines - vim.o.cmdheight - config.margin.bottom
+	then
+		return nil
+	end
+	return row
+end
+
 local function row_positions()
 	local rows = {}
 	local row = config.top_down and config.margin.top or 0
@@ -360,6 +388,20 @@ end
 local show_queued
 local close
 local dismissing = false
+local queue_check_pending = false
+
+local function retry_queue()
+	if queue_check_pending or #M._queue == 0 then
+		return
+	end
+	queue_check_pending = true
+	vim.schedule(function()
+		queue_check_pending = false
+		if not dismissing then
+			show_queued()
+		end
+	end)
+end
 
 local function options(record)
 	if record.animation == false or config.animation == false then
@@ -373,12 +415,34 @@ local function options(record)
 end
 
 local function apply(record, frame)
+	local previous
+	for _, item in ipairs(visible()) do
+		if item == record then
+			break
+		end
+		previous = item
+	end
+	if previous then
+		local spacing = (config.border == "none" and 0 or 2) + config.gap
+		if config.top_down then
+			frame.row = math.max(frame.row, previous.frame.row + previous.frame.height + spacing)
+		else
+			frame.row = math.min(frame.row, previous.frame.row - frame.height - spacing)
+		end
+	end
 	local win = record.win
+	local geometry_changed = win.opts.row ~= frame.row
+		or win.opts.col ~= frame.col
+		or win.opts.width ~= frame.width
+		or win.opts.height ~= frame.height
 	win.opts.row, win.opts.col = frame.row, frame.col
 	win.opts.width, win.opts.height = frame.width, frame.height
 	set_fade_highlights(record, frame.opacity)
-	win:update()
+	if geometry_changed then
+		win:update()
+	end
 	redraw_now(win.win)
+	retry_queue()
 end
 
 local function base_frame(record, row)
@@ -403,11 +467,19 @@ local function start_timeout(record)
 	end, record.timeout or config.timeout)
 end
 
-local function layout()
+local layout
+layout = function()
+	if has_exiting() then
+		return
+	end
 	local rows = row_positions()
 	for _, record in ipairs(visible()) do
 		if not record.closed then
 			Animation.run(record, base_frame(record, rows[record.id]), options(record), apply, function()
+				if record.frame.row ~= rows[record.id] then
+					vim.schedule(layout)
+					return
+				end
 				if record.opening then
 					record.opening = false
 					start_timeout(record)
@@ -426,20 +498,11 @@ local function render(record)
 	Renderer.render(record, config, highlights, renderer_config)
 	if record.win and record.win:valid() then
 		layout()
-		return
+		return true
 	end
-	local row = config.margin.top
-	local list = visible()
-	local total = record.height + (config.border == "none" and 0 or 2)
-	if config.top_down then
-		for _, item in ipairs(list) do
-			row = row + item.height + (config.border == "none" and 0 or 2) + config.gap
-		end
-	else
-		row = vim.o.lines - vim.o.cmdheight - config.margin.bottom - total
-		for _, item in ipairs(list) do
-			row = row - item.height - (config.border == "none" and 0 or 2) - config.gap
-		end
+	local row = available_row(record)
+	if not row then
+		return false
 	end
 	local base = base_frame(record, row)
 	local opts = options(record)
@@ -500,24 +563,34 @@ local function render(record)
 	end
 	layout()
 	redraw()
+	return true
 end
 
 local function show(record)
 	util.stop_timer(record.timer)
 	record.timer = nil
-	render(record)
+	if render(record) == false then
+		return false
+	end
 	if not record.opening then
 		start_timeout(record)
 	end
+	return true
 end
 
 show_queued = function()
+	if has_exiting() then
+		return
+	end
 	while #visible() < math.max(1, config.max_visible) and #M._queue > 0 do
-		local record = table.remove(M._queue, 1)
+		local record = M._queue[1]
 		if not record.closed then
+			if not show(record) then
+				break
+			end
 			record.queued = false
-			show(record)
 		end
+		table.remove(M._queue, 1)
 	end
 end
 
@@ -698,12 +771,10 @@ local function notify_impl(message, level, opts, source, reserved_id)
 	if resolved_id ~= nil then
 		M._ids[resolved_id] = id
 	end
-	local queued = #visible() >= math.max(1, config.max_visible)
-	if queued then
+	local queued = has_exiting() or #M._queue > 0 or #visible() >= math.max(1, config.max_visible)
+	if queued or not show(record) then
 		record.queued = true
 		M._queue[#M._queue + 1] = record
-	else
-		show(record)
 	end
 	return record
 end

@@ -35,7 +35,11 @@ function M.run(record, target, options, apply, done)
 		update(1, { done = true })
 		return
 	end
-	record.animation_handle = require("animate")(0, 1, update, {
+	-- animate calculate the sampling interval based on the value range, using the millisecond range before normalization.
+	local span = math.max(1, options.duration)
+	record.animation_handle = require("animate")(0, span, function(value, ctx)
+		update(value / span, ctx)
+	end, {
 		id = "notify:animation:" .. record.id,
 		duration = { total = options.duration },
 		easing = options.easing,

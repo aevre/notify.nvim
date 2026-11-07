@@ -544,6 +544,110 @@ for _, preset in ipairs({ "static", "fade", "slide", "slide_out", "fade_in_slide
 	check(animated.closed and animated.win == nil, "exiting window releases capacity only after closing")
 	notify.dismiss()
 end
+notify.setup({ animation = { preset = "fade", duration = 240, fps = 60 }, max_visible = 1 })
+local fade_started = vim.uv.hrtime()
+local fading = vim.notify("smooth fade", nil, { timeout = 30 })
+local geometry_updates = 0
+local fade_win = fading.win
+local update_win = fade_win.update
+fade_win.update = function(self)
+	geometry_updates = geometry_updates + 1
+	return update_win(self)
+end
+local fade_frames = 0
+local set_hl = vim.api.nvim_set_hl
+vim.api.nvim_set_hl = function(ns, name, value)
+	if name == "NotifyFade" .. fading.id .. "Body" then
+		fade_frames = fade_frames + 1
+	end
+	return set_hl(ns, name, value)
+end
+local fade_completed = vim.wait(1000, function()
+	return fading.win == nil
+end, 5)
+vim.api.nvim_set_hl = set_hl
+check(fade_completed, "fade entry and exit finish within configured duration tolerance")
+check((vim.uv.hrtime() - fade_started) / 1e6 >= 400, "fade does not skip configured transition duration")
+check(fade_frames >= 24, "fade samples opacity at configured frame rate")
+check(geometry_updates == 0, "opacity-only animation does not reconfigure window geometry")
+notify.dismiss()
+notify.setup({ animation = { preset = "slide_out", duration = 120 }, max_visible = 2, top_down = true })
+local exiting_first = vim.notify("first exit", nil, { timeout = 10 })
+local exiting_second = vim.notify("second exit", nil, { timeout = 10, animation = { duration = 300 } })
+local first_row = exiting_first.frame.row
+local queued_first = vim.notify("third", nil, { timeout = false })
+local queued_second = vim.notify("fourth", nil, { timeout = false })
+check(
+	vim.wait(1000, function()
+		return exiting_first.win == nil
+	end, 5),
+	"first exit completes"
+)
+check(exiting_second.win and exiting_second.closed, "second exit is still running")
+check(queued_first.queued and not queued_first.win, "queue waits for remaining exit")
+local late = vim.notify("late arrival", nil, { timeout = false })
+check(late.queued and not late.win, "new arrivals wait behind queued notifications during exit")
+check(
+	vim.wait(1000, function()
+		return queued_second.win ~= nil
+	end, 5),
+	"queue fills after all exits complete"
+)
+check(queued_first.frame.row == first_row, "first queued notification enters at its final row")
+check(queued_second.frame.row > queued_first.frame.row, "queued notifications retain their order")
+check(late.queued, "late arrival cannot bypass the queue")
+notify.dismiss()
+local saved_lines = vim.o.lines
+vim.o.lines = 80
+for _, top_down in ipairs({ true, false }) do
+	notify.setup({ animation = { preset = "fade", duration = 160 }, max_visible = 5, top_down = top_down })
+	local moving = {}
+	local overlap = false
+	local function inspect_spacing()
+		local previous
+		for _, item in ipairs(moving) do
+			if item.win and item.win:valid() then
+				local frame = item.frame
+				if previous then
+					local gap = top_down and (frame.row - previous.row - previous.height - 2)
+						or (previous.row - frame.row - frame.height - 2)
+					overlap = overlap or gap < 0
+				end
+				previous = frame
+			end
+		end
+	end
+	for i = 1, 6 do
+		local item = vim.notify("moving " .. i, nil, {
+			timeout = i == 1 and 20 or false,
+			animation = { duration = i % 2 == 0 and 320 or 160 },
+			on_open = inspect_spacing,
+		})
+		moving[i] = item
+		if item.win then
+			local original_update = item.win.update
+			item.win.update = function(self)
+				inspect_spacing()
+				return original_update(self)
+			end
+		end
+	end
+	check(moving[6].queued, "sixth notification waits at capacity five")
+	check(
+		vim.wait(1500, function()
+			inspect_spacing()
+			return moving[6].win ~= nil and not moving[6].opening and moving[2].animation_handle == nil
+		end, 1),
+		"queued notification enters during smooth restacking"
+	)
+	check(not overlap, "moving windows never overlap in either stacking direction")
+	check(
+		moving[2].frame.row == (top_down and 1 or 80 - vim.o.cmdheight - moving[2].height - 2),
+		"survivor reaches its final row"
+	)
+	notify.dismiss()
+end
+vim.o.lines = saved_lines
 notify.setup({
 	animation = { preset = { open = { height = 1, opacity = 0 }, close = { opacity = 0 } }, duration = 30 },
 })
