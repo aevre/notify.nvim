@@ -365,7 +365,7 @@ vim.wait(250, function()
 end, 10)
 local fidget_line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(fidget_win), 0, 1, false)[1]
 check(vim.api.nvim_win_get_width(fidget_win) == vim.fn.strdisplaywidth(fidget_line), "fidget fits short content")
-local fidget_max_width = math.max(1, math.min(math.floor(vim.o.columns * 0.4), vim.o.columns - 2))
+local fidget_max_width = math.max(1, vim.o.columns - 2)
 fidget.progress(string.rep("long message ", 10), {
 	client_id = 7,
 	token = "single-line",
@@ -516,6 +516,94 @@ check(#notify.history({ include_hidden = true }) == history_before_progress, "pr
 check(fidget.history()[2].state == "dismissed", "fidget dismissal updates history")
 fidget.clear_history()
 check(#fidget.history() == 0, "clear fidget history")
+fidget.setup({ animate = false, max_visible = 1 })
+fidget.send("blocker", "waiting", { token = "blocker" })
+fidget.notify("queued short message", { title = "queued", timeout = 80 })
+vim.wait(120)
+check(fidget.history()[2].state == "active", "hidden short message does not expire")
+fidget.finish("blocker", "done")
+check(
+	vim.wait(200, function()
+		return find_fidget_win("queued") ~= nil
+	end, 5),
+	"short message appears after task finishes"
+)
+check(
+	vim.wait(300, function()
+		return fidget.history()[2].state == "finished"
+	end, 5),
+	"short message expires after display"
+)
+fidget.dismiss()
+fidget.clear_history()
+local view = require("notify.fidget.view")
+view.setup(require("animate"), function()
+	return "*"
+end)
+local entries = {}
+local changed = function() end
+for i = 1, 5 do
+	entries[i] = { key = "view-test-" .. i, task = { title = "task " .. i, level = "INFO" } }
+end
+local view_opts = { max_visible = 5, animation = { duration = { total = 100 } } }
+for count = 1, 5 do
+	local subset = {}
+	for i = 1, count do
+		subset[i] = entries[i]
+	end
+	view.layout(subset, view_opts, changed, function() end)
+	check(
+		vim.wait(500, function()
+			view.layout(subset, view_opts, changed, function() end)
+			local previous
+			for _, item in ipairs(subset) do
+				if not item.task.win then
+					return false
+				end
+				local row = item.task.win.opts.row
+				check(not previous or row > previous, "Fidget windows never overlap while adding tasks")
+				previous = row
+			end
+			return subset[#subset].task.win ~= nil and subset[1].task.target_row == nil
+		end, 5),
+		"Fidget tasks settle without restarting animations"
+	)
+end
+local saved_columns = vim.o.columns
+local width_task = { title = "Width", message = string.rep("中文abc", 12), level = "none", icon = "" }
+local width_items = { { key = "width-test", task = width_task } }
+vim.o.columns = 120
+view.layout(width_items, { animate = false }, changed, function() end)
+local full_line = vim.api.nvim_buf_get_lines(width_task.win.buf, 0, -1, false)[1]
+check(width_task.win.opts.width == vim.fn.strdisplaywidth(full_line), "default Fidget width fits full content")
+check(full_line == "Width: " .. width_task.message, "default width uses more than forty percent of editor")
+vim.o.columns = 60
+view.layout(width_items, { animate = false }, changed, function() end)
+check(width_task.win.opts.width <= 58, "Fidget width stays inside editor margins")
+vim.o.columns = 120
+view.layout(width_items, { animate = false }, changed, function() end)
+check(
+	vim.api.nvim_buf_get_lines(width_task.win.buf, 0, -1, false)[1] == full_line,
+	"enlarging editor restores original text"
+)
+view.layout(width_items, { animate = false, max_width = 0.4 }, changed, function() end)
+check(width_task.win.opts.width <= 48, "explicit fractional width remains supported")
+view.layout(width_items, { animate = false, max_width = 30 }, changed, function() end)
+check(width_task.win.opts.width <= 30, "explicit column width remains supported")
+view.close(width_task, "width-test")
+vim.o.columns = saved_columns
+local original_lines = vim.o.lines
+vim.o.lines = 5
+view.layout(entries, { animate = false, max_visible = 5 }, changed, function() end)
+check(entries[3].task.win ~= nil and entries[4].task.win == nil, "Fidget capacity respects available editor rows")
+vim.o.lines = original_lines
+local target = entries[1].task.target_row
+view.refresh(entries, view_opts)
+check(entries[1].task.target_row == target, "spinner refresh does not restart layout")
+for _, item in ipairs(entries) do
+	view.close(item.task, item.key)
+end
+fidget.clear_history()
 notify.setup({ animation = false, lsp_progress = false })
 check(autocmd_count() == 0, "lsp progress cleanup")
 

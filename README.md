@@ -51,7 +51,6 @@ require("notify").setup({
   picker = "telescope", -- optional default: "fzf", "telescope", or "select"
   fidget = {
     max_visible = 5,
-    max_width = 0.4,
     margin_left = 1,
     margin_right = 1,
     margin_bottom = 1,
@@ -97,7 +96,6 @@ Configure Fidget through the top-level `fidget` option:
 ```lua
 fidget = {
   max_visible = 5,
-  max_width = 0.4,
   margin_left = 1,
   margin_right = 1,
   margin_bottom = 1,
@@ -107,7 +105,7 @@ fidget = {
 }
 ```
 
-- Windows fit their content up to `max_width`, which accepts a fraction of the editor width or a fixed column count and defaults to `0.4`.
+- Windows fit their content up to the editor width minus left and right margins. Set `max_width` explicitly to limit them to a fraction of the editor width or a fixed column count. Resizing recalculates from the original text, restoring truncated content when space becomes available.
 - `spinner_interval` is the frame duration in milliseconds and is clamped to at least 50ms.
 - Progress tasks can override the frames and interval with `spinner_frames`, `spinner_interval`, or `spinner = { ... }`. `spinner = true` uses the configured frames.
 - Frame lists must contain non-empty strings; invalid lists fall back to the built-in frames.
@@ -177,6 +175,12 @@ The module is callable as `notify.notify(message, level, opts)`. History records
 `vim.notify` emits the `notify` tag with source `vim.notify`; `notify.send()` uses the same tag with source `notify.send`.
 
 ### Fidget API
+
+Fidget tasks retain arrival order, including tasks created in the same millisecond.
+Visible capacity is bounded by both `max_visible` and available editor rows; remaining tasks wait.
+Short messages start their timeout when first shown. Progress tasks that finish while waiting are removed without being shown.
+Task movement preserves spacing; spinner refresh updates content without restarting movement.
+Finishing or dismissing a task cancels its window animation and timeout.
 
 `notify.fidget.notify(message, opts)` displays a message directly. Fidget levels are `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, or `none`; `none` hides the level label. Icons default to the level icon and can be overridden with `icon`.
 

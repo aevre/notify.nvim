@@ -1,6 +1,6 @@
 ---@class notify.FidgetConfig
 ---@field max_visible? integer Maximum visible progress windows.
----@field max_width? number Maximum window width; values below 1 are a fraction of editor width.
+---@field max_width? number Maximum window width; defaults to available editor width. Values below 1 are a fraction of editor width.
 ---@field margin_left? integer Left editor margin.
 ---@field margin_right? integer Right editor margin.
 ---@field margin_bottom? integer Bottom editor margin.
@@ -42,7 +42,7 @@
 local M = {}
 
 ---@type win
-local Win = require("win")
+local View = require("notify.fidget.view")
 local levels = require("notify.levels")
 local util = require("notify.util")
 ---@class notify.FidgetTask
@@ -80,7 +80,7 @@ local progress = {}
 ---@type notify.FidgetConfig
 local current_opts = {}
 ---@type integer|nil
-local render_timer, spinner_timer
+local spinner_timer
 local redraw_pending = false
 ---@type animate|nil
 local Animate
@@ -100,6 +100,11 @@ local function redraw()
 	end)
 end
 local next_message_id = 0
+local next_sequence = 0
+local function sequence()
+	next_sequence = next_sequence + 1
+	return next_sequence
+end
 local history = {}
 local spinner_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
@@ -134,127 +139,49 @@ local function tasks()
 		result[#result + 1] = { key = key, task = task }
 	end
 	table.sort(result, function(a, b)
-		return a.task.started < b.task.started
+		return a.task.sequence < b.task.sequence
 	end)
 	return result
 end
 
+local render
+local visible_tasks = {}
+local layout_pending = false
+
+local function request_layout()
+	if layout_pending then
+		return
+	end
+	layout_pending = true
+	vim.schedule(function()
+		layout_pending = false
+		render()
+	end)
+end
+
+local function remove(key, task, state)
+	if progress[key] ~= task then
+		return
+	end
+	util.stop_timer(task.timer)
+	task.timer = nil
+	View.close(task, key)
+	task.history.state = state
+	progress[key] = nil
+	request_layout()
+end
+
+local function opened(task, key)
+	if task.timeout and not task.timer then
+		task.timer = vim.defer_fn(function()
+			task.timer = nil
+			remove(key, task, "finished")
+		end, task.timeout)
+	end
+end
+
 local function layout()
-	local all_tasks = tasks()
-	local list = {}
-	local last = math.min(#all_tasks, math.max(1, current_opts.max_visible or 5))
-	for index = 1, last do
-		list[#list + 1] = all_tasks[index]
-	end
-	local opts = current_opts
-	local margin_left, margin_right = opts.margin_left or 1, opts.margin_right or 1
-	local max_width = type(opts.max_width) == "number" and opts.max_width or 0.4
-	max_width = math.floor(max_width < 1 and vim.o.columns * max_width or max_width)
-	max_width = math.max(1, math.min(max_width, vim.o.columns - margin_left - margin_right))
-	local bottom = vim.o.lines - vim.o.cmdheight - (opts.margin_bottom or 1)
-	for index, item in ipairs(list) do
-		local task, row = item.task, bottom - (#list - index + 1)
-		local level = levels.name(task.level)
-		local level_info = levels[level] or levels.INFO
-		local icon = task.spinner
-				and spinner(
-					type(task.spinner) == "table" and task.spinner or task.spinner_frames or opts.spinner_frames,
-					task.spinner_interval or opts.spinner_interval or 200
-				)
-			or task.icon
-			or level_info.icon
-			or ""
-		local tag = level ~= "none" and (level .. "  ") or ""
-		local label = tag .. tostring(task.title or "Working")
-		if task.message and task.message ~= "" then
-			label = label .. ": " .. tostring(task.message):gsub("\n", " ")
-		end
-		if task.percentage then
-			label = label .. (" %d%%"):format(task.percentage)
-		end
-		local available = math.max(0, max_width - vim.fn.strdisplaywidth(icon) - (icon ~= "" and 2 or 0))
-		while vim.fn.strdisplaywidth(label) > available and #label > 0 do
-			label = vim.fn.strcharpart(label, 0, vim.fn.strchars(label) - 1)
-		end
-		local line = icon ~= "" and (icon .. "  " .. label) or label
-		local width = math.max(1, math.min(vim.fn.strdisplaywidth(line), max_width))
-		local col = vim.o.columns - margin_right - width
-		if not task.win or not task.win:valid() then
-			task.win = Win({
-				position = "float",
-				relative = "editor",
-				row = row,
-				col = col,
-				width = width,
-				height = 1,
-				border = "none",
-				backdrop = false,
-				zindex = 80 + index,
-				enter = false,
-				focusable = false,
-				style = "minimal",
-				bo = { modifiable = false, bufhidden = "wipe" },
-				wo = {
-					wrap = false,
-					winblend = 0,
-					winhighlight = "Normal:NotifyFidgetBackground,NormalNC:NotifyFidgetBackground",
-				},
-			})
-		end
-		vim.bo[task.win.buf].modifiable = true
-		vim.api.nvim_buf_set_lines(task.win.buf, 0, -1, false, { line })
-		vim.bo[task.win.buf].modifiable = false
-		vim.api.nvim_set_hl(0, "NotifyFidgetBackground", { bg = "NONE" })
-		local level_highlight = "NotifyProgressTask"
-		if level ~= "none" then
-			level_highlight = "NotifyFidget" .. level
-			local source = vim.api.nvim_get_hl(0, { name = "Notify" .. level .. "Icon", link = false })
-			vim.api.nvim_set_hl(0, level_highlight, { fg = source.fg })
-		end
-		local ns = vim.api.nvim_create_namespace("notify-progress")
-		vim.api.nvim_buf_clear_namespace(task.win.buf, ns, 0, -1)
-		local icon_start = 0
-		if icon ~= "" then
-			util.highlight(
-				task.win.buf,
-				ns,
-				task.spinner and "NotifyProgressSpinner" or level_highlight,
-				0,
-				icon_start,
-				icon_start + #icon
-			)
-		end
-		local tag_start = icon_start + #icon + (icon ~= "" and 2 or 0)
-		if tag ~= "" then
-			util.highlight(task.win.buf, ns, level_highlight, 0, tag_start, tag_start + #tag - 2)
-		end
-		local task_start = tag_start + #tag
-		local title = tostring(task.title or "Working")
-		util.highlight(task.win.buf, ns, "NotifyProgressTask", 0, task_start, #line)
-		util.highlight(task.win.buf, ns, "NotifyProgressTitle", 0, task_start, task_start + #title)
-		if task.message and task.message ~= "" then
-			util.highlight(task.win.buf, ns, "NotifyProgressMessage", 0, task_start + #title + 2, #line)
-		end
-		local start, finish = line:find(" %d+%%", task_start)
-		if start and finish then
-			util.highlight(task.win.buf, ns, "NotifyProgressPercentage", 0, start - 1, finish)
-		end
-		local old_row = task.win.opts.row
-		old_row = type(old_row) == "number" and old_row or row
-		task.win.opts.width, task.win.opts.col, task.win.opts.zindex = width, col, 80 + index
-		if opts.animate ~= false and Animate and old_row ~= row then
-			Animate(old_row, row, function(value)
-				if task.win and task.win:valid() then
-					task.win.opts.row = math.floor(value + 0.5)
-					task.win:update()
-					redraw()
-				end
-			end, vim.tbl_extend("force", opts.animation or {}, { int = true, id = "notify:fidget:" .. item.key }))
-		else
-			task.win.opts.row = row
-		end
-		task.win:update()
-	end
+	visible_tasks = View.layout(tasks(), current_opts, request_layout, opened)
 	redraw()
 end
 
@@ -270,7 +197,8 @@ local function refresh_spinner()
 					end
 				end
 				if active then
-					layout()
+					View.refresh(visible_tasks, current_opts)
+					redraw()
 				else
 					util.stop_timer(spinner_timer)
 					spinner_timer = nil
@@ -281,21 +209,20 @@ local function refresh_spinner()
 end
 
 local function clear()
-	for _, task in pairs(progress) do
-		if task.win then
-			task.win:close()
-		end
+	for key, task in pairs(progress) do
+		util.stop_timer(task.timer)
+		View.close(task, key)
 		if task.history and task.history.state == "active" then
 			task.history.state = "dismissed"
 		end
 	end
 	progress = {}
-	util.stop_timer(render_timer)
 	util.stop_timer(spinner_timer)
-	render_timer, spinner_timer = nil, nil
+	spinner_timer = nil
+	visible_tasks = {}
 end
 
-local function render()
+render = function()
 	if not next(progress) then
 		clear()
 		redraw()
@@ -314,6 +241,7 @@ function M.setup(opts, animate)
 		current_opts = {}
 	end
 	Animate = animate or Animate
+	View.setup(Animate, spinner)
 	return true
 end
 
@@ -397,6 +325,8 @@ function M.notify(message, opts)
 	remember(record)
 	local task = {
 		started = util.now(),
+		sequence = sequence(),
+		timeout = opts.timeout or current_opts.timeout or 3000,
 		title = title,
 		message = message,
 		icon = opts.icon,
@@ -404,17 +334,7 @@ function M.notify(message, opts)
 		history = record,
 	}
 	progress[key] = task
-	vim.schedule(render)
-	vim.defer_fn(function()
-		if progress[key] == task then
-			task.history.state = "finished"
-			if task.win then
-				task.win:close()
-			end
-			progress[key] = nil
-			render()
-		end
-	end, opts.timeout or current_opts.timeout or 3000)
+	request_layout()
 	return key
 end
 
@@ -447,27 +367,21 @@ function M.progress(message, opts)
 		if message and message ~= "" then
 			task.history.message = vim.split(tostring(message), "\n", { plain = true })
 		end
-		progress[key] = nil
-		vim.schedule(function()
-			if task.win then
-				task.win:close()
-			end
-			render()
-		end)
+		if progress[key] then
+			remove(key, task, "finished")
+		end
 		return key
 	end
 	local previous = progress[key] or {}
 	previous.started = previous.started or util.now()
+	previous.sequence = previous.sequence or sequence()
 	previous.title, previous.message = opts.title or previous.title, message or previous.message
 	previous.percentage, previous.icon = opts.percentage or previous.percentage, opts.icon or previous.icon
 	previous.level = levels.name(opts.level or previous.level)
 	previous.spinner_interval = opts.spinner_interval or previous.spinner_interval
 	previous.spinner_frames = opts.spinner_frames or previous.spinner_frames
 	previous = update_task_history(key, previous, opts)
-	if opts.kind == "end" then
-		previous.spinner = false
-		previous.history.state = "finished"
-	elseif opts.spinner ~= nil then
+	if opts.spinner ~= nil then
 		previous.spinner = opts.spinner == true and true
 			or type(opts.spinner) == "table" and spinner_frames_for(opts.spinner)
 			or false
@@ -476,7 +390,7 @@ function M.progress(message, opts)
 	if previous.spinner then
 		refresh_spinner()
 	end
-	vim.schedule(render)
+	request_layout()
 	return key
 end
 

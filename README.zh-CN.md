@@ -105,6 +105,7 @@ fidget = {
 }
 ```
 
+- 窗口默认按内容宽度显示，上限为编辑器宽度减去左右边距；显式设置 `max_width` 可限制为列数或编辑器宽度比例。缩放时按原始文本重新计算，空间足够后恢复完整内容。
 - `spinner_interval` 是每帧的毫秒数，最小为 50ms。
 - 进度任务可以用 `spinner_frames`、`spinner_interval` 或 `spinner = { ... }` 覆盖帧列表和速度；`spinner = true` 使用配置中的默认帧。
 - 帧列表必须非空且每一项都是非空字符串，否则回退到内置帧。
@@ -173,6 +174,12 @@ notify.restore()
 `vim.notify` 使用 `notify` 标签和 `vim.notify` 来源；`notify.send()` 使用相同标签、来源为 `notify.send`。
 
 ### Fidget API
+
+Fidget 按到达顺序显示任务，同一毫秒创建的任务也保持稳定顺序。
+显示数量同时受 `max_visible` 与编辑器可用行数限制，其余任务等待。
+短消息首次显示后才开始超时；等待期间已完成的进度任务直接移除，不再显示。
+任务移动时保持间距，spinner 刷新只更新内容，不重启移动动画。
+结束或清空任务会取消对应窗口动画和超时定时器。
 
 `notify.fidget.notify(message, opts)` 直接显示 Fidget 消息。Fidget 的 `level` 支持 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR` 和 `none`；`none` 不显示级别标签。图标默认对应通知级别，也可通过 `icon` 覆盖。
 
