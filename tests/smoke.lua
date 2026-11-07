@@ -265,14 +265,19 @@ notify.setup({
 	routes = {
 		{ match = { exact = { "notify" }, message = { [[\vwritten|saved]] } }, to = "fidget" },
 		{ match = { prefix = { "msg.show." }, message = { [[\vline changed]] } }, to = "fidget" },
-		{ match = { exact = { "notify" }, source = "notify.send" }, to = "custom" },
+		{ match = { exact = { "notify" }, source = "notify.send" }, to = { "custom", "fidget" } },
+		{ match = { exact = { "notify" } }, to = "notify" },
 		{ match = { exact = { "route.test" } }, to = "custom" },
 	},
 })
 local routed = 0
+local routed_fanout = 0
 local remove_routed = notify.subscribe("notify-test-route", { exact = { "notify", "route.test" } }, nil, function()
 	routed = routed + 1
 end, "custom")
+local remove_fanout = notify.subscribe("notify-test-fanout", { exact = { "notify" } }, nil, function()
+	routed_fanout = routed_fanout + 1
+end, "fidget")
 notify.bus.emit("notify", vim.log.levels.INFO, "vim source", {}, { source = "vim.notify" })
 notify.send("direct api", vim.log.levels.INFO, { timeout = false })
 notify.emit("route.test", vim.log.levels.INFO, "custom route")
@@ -293,6 +298,7 @@ check(
 	"Fidget picker preview shows caller stack"
 )
 check(routed == 2, "source and tag routing")
+check(routed_fanout == 2, "first matching route fans out to listed backends")
 local notification_count = #notify.history()
 local fidget_count = #require("notify.fidget").history()
 notify.emit("msg.show.write-summary", vim.log.levels.INFO, "1 line changed; before #1005")
@@ -302,6 +308,7 @@ end)
 check(#notify.history() == notification_count, "msg.show route skips notification backend")
 check(#require("notify.fidget").history() == fidget_count + 1, "msg.show route reaches fidget backend")
 remove_routed()
+remove_fanout()
 notify.setup({
 	animation = false,
 	routes = {

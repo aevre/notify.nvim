@@ -65,10 +65,7 @@ function M.set_routes(routes)
 	M.routes = routes
 end
 
-local function routed_to(subscriber, message)
-	if not subscriber.backend then
-		return true
-	end
+local function route_targets(message)
 	local routes = M.routes
 		or {
 			{ match = { exact = { "notify" }, source = "vim.notify" }, to = "notify" },
@@ -81,23 +78,18 @@ local function routed_to(subscriber, message)
 			matches(selector, message.tag, message.content)
 			and (not selector.source or selector.source == message.meta.source)
 		then
+			local targets = {}
 			if type(route.to) == "string" then
-				if route.to == subscriber.backend then
-					return true
-				end
+				targets[route.to] = true
 			else
-				local targets = route.to
-				---@cast targets string[]
-				for _, target in ipairs(targets) do
-					if target == subscriber.backend then
-						return true
-					end
+				for _, target in ipairs(route.to) do
+					targets[target] = true
 				end
 			end
-			return false
+			return targets
 		end
 	end
-	return false
+	return {}
 end
 
 ---@param id string
@@ -132,11 +124,12 @@ local function drain()
 	M.dispatching = true
 	while #M.queue > 0 do
 		local message = table.remove(M.queue, 1)
+		local targets = route_targets(message)
 		for _, subscriber in pairs(M.subscribers) do
 			if
 				message.level >= subscriber.min_level
 				and matches(subscriber.interested, message.tag, message.content)
-				and routed_to(subscriber, message)
+				and (not subscriber.backend or targets[subscriber.backend])
 			then
 				local ok, err = pcall(subscriber.handler, message)
 				if not ok then
