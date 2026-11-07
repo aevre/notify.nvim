@@ -89,7 +89,7 @@ function M.render(record, config, highlights, helpers)
 	end
 	width = math.max(1, math.min(width, helpers.max_width()))
 	if separator then
-		lines[2] = string.rep("━", math.max(1, width - config.padding * 2))
+		lines[2] = string.rep("━", width)
 		vim.api.nvim_buf_set_lines(buf, 1, 2, false, { lines[2] })
 	end
 	if not callback then

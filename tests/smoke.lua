@@ -116,10 +116,7 @@ check(
 )
 check(#visual_lines == 4 and visual_lines[2]:find("━", 1, true), "notification title separator")
 check(#vim.api.nvim_buf_get_extmarks(visual.win.buf, -1, 0, -1, {}) > 0, "notification highlights")
-check(
-	vim.fn.strdisplaywidth(visual_lines[2]) == visual.win.opts.width - 2,
-	"separator fills notification content width"
-)
+check(vim.fn.strdisplaywidth(visual_lines[2]) == visual.win.opts.width, "separator fills notification window width")
 local replaced = vim.notify("replaced message", vim.log.levels.ERROR, {
 	id = "smoke",
 	timeout = false,
