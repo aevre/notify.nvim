@@ -40,19 +40,17 @@ require("notify").setup({
   border = "rounded",
   gap = 0,
   margin = { top = 1, right = 1, bottom = 0 },
-  animate = true,
   style = "default",
-  stages = "fade_in_slide_out",
-  animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
+  animation = { preset = "fade_in_slide_out", duration = 240, easing = "outQuad", fps = 60 },
   max_history = 200,
-  max_queue = 5,
+  max_visible = 5,
   merge_duplicates = false, -- 毫秒，例如 500
   top_down = true,
   icons = { INFO = "ℹ", WARN = "⚠" },
   lsp_progress = true,
   picker = "telescope", -- 可选默认值："fzf"、"telescope" 或 "select"
   fidget = {
-    max_queue = 5,
+    max_visible = 5,
     margin_left = 1,
     margin_right = 1,
     margin_bottom = 1,
@@ -78,12 +76,10 @@ require("notify").setup({
 | `border` | `"rounded"` | 传给 win.nvim 的边框样式，例如 `"single"`、`"rounded"` 或 `"none"`。 |
 | `top_down` | `true` | 为 true 时从顶部堆叠；为 false 时从底部向上堆叠。 |
 | `max_history` | `200` | 内存中保留的通知历史记录数量上限。 |
-| `max_queue` | `5` | 同时显示的通知窗口数量上限，额外通知按到达顺序排队。 |
+| `max_visible` | `5` | 同时显示的通知窗口数量上限，额外通知按到达顺序排队。 |
 | `merge_duplicates` | `false` | 在指定毫秒内，标题、级别和正文完全相同时复用仍未关闭的通知；复用时重新开始超时计时，历史中只保留一条记录。 |
-| `animate` | `true` | 通知过渡和重新堆叠动画的总开关。 |
 | `style` | `"default"` | renderer 名称：`default`、`minimal`、`simple`、`compact`、`wrapped-compact` 或 `wrapped-default`。 |
-| `stages` | `"fade_in_slide_out"` | 动画预设：`fade`、`slide`、`slide_out`、`fade_in_slide_out` 或 `static`。也可以使用表按阶段关闭 `open`、`layout`、`close`，或使用函数返回预设/阶段表。 |
-| `animation` | `{ duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 }` | 传给 animate.nvim 的时长、缓动和帧率。`duration` 可以是数字，也可以是 `{ step, total }` 表。 |
+| `animation` | `{ preset = "fade_in_slide_out", duration = 240, easing = "outQuad", fps = 60 }` | 阶段预设、总时长（毫秒）、缓动和帧率；`false` 关闭动画。 |
 | `routes` | `nil` | 按顺序匹配的 bus 路由。没有自定义路由时，内置路由将 `vim.notify`、`notify.send()` 和 `msg.show.*` 发送到通知后端。 |
 | `debug` | `false` | 在通知记录中保存 bus 来源、标签、ID、级别和调用栈，并在 picker 预览中显示。 |
 | `fidget` | `nil` | Fidget 配置，见下方的 Fidget 小节，包括任务容量、边距、超时和 spinner。 |
@@ -99,7 +95,7 @@ require("notify").setup({
 
 ```lua
 fidget = {
-  max_queue = 5,
+  max_visible = 5,
   margin_left = 1,
   margin_right = 1,
   margin_bottom = 1,
@@ -114,24 +110,35 @@ fidget = {
 - 帧列表必须非空且每一项都是非空字符串，否则回退到内置帧。
 - Fidget 消息支持 `timeout`、`title`、`level` 和 `icon`。级别为 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR` 或 `none`。
 - 每个任务使用独立的透明无边框浮窗；新任务从底部加入，并通过 animate.nvim 动画将旧任务向上顶。
-- `max_queue` 限制可见任务窗口数量，额外任务按到达顺序等待。
+- `max_visible` 限制可见任务窗口数量，额外任务按到达顺序等待。
 
 Fidget 是通用消息界面。独立的 LSP progress producer 会直接向它发送更新、启用 spinner 并提供自己的六帧列表。Fidget 消息和进度不会进入通知历史。
 
 ### Renderer 与动画
 
-- `default` 显示图标、标题、分割线和正文。
-- `wrapped-default` 保持相同布局，并将过长正文折行。
-- `minimal` 显示图标和第一行正文；`simple` 合并图标、标题和第一行正文。
-- `compact` 将标题置于分割线和正文上方；`wrapped-compact` 显示折行正文但不显示标题行。
+`style` 与动画独立，可选 `default`、`compact`、`minimal`、`simple`、`wrapped-default`、`wrapped-compact`。
+`default` 显示图标、标题、时间、分割线和正文；`compact` 省略时间与分割线。
+`minimal` 只显示图标和正文；`simple` 将图标、标题和第一行正文合并。
+两个 `wrapped-*` 样式按显示宽度折行，保留中文和组合字符。
+先渲染 buffer，再测量内容与虚拟文本，最后创建窗口；自定义 renderer 同样经过测量。
 
-使用 `style` 选择内置 renderer。使用 `animate = false` 或 `stages = "static"` 关闭过渡动画。`stages` 选择动画预设，`animation` 将时长和缓动参数传给 animate.nvim。小于 `1` 的 `max_width` 和 `max_height` 会按当前编辑器尺寸计算。
+`animation.preset` 支持 `static`、`fade`、`slide`、`slide_out`、`fade_in_slide_out`。
+混合预设进入时淡入，退出时向右收缩并淡出。`animation = false` 关闭过渡。
+`duration` 是一次过渡的总毫秒数，位置、宽高和透明度共用一个进度。
+打开动画完成后才开始 `timeout`；退出完成后才释放可见名额。替换会取消旧动画并从当前状态过渡。
+`keep` 只推迟自动关闭，手动 `dismiss()` 始终取消动画和计时器。
 
-通知默认堆叠在右上角。Fidget 任务使用右下角独立的全宽无边框浮窗，并将旧任务向上顶。Fidget 消息和进度不会进入通知历史。
+也可把 `animation.preset` 设为 `{ open = { opacity = 0 }, close = { width = 1, opacity = 0 } }`。
+阶段表支持 `row`、`col`、`width`、`height`、`opacity`；open 描述初始状态，close 描述结束状态，opacity 范围为 0～1。
+宽度改变且未指定 col 时保持右边缘对齐。`static` 和 `animation = false` 都不播放重排动画。
+
+迁移：删除旧的 `animate`、`stages` 字段，使用 `animation = false` 或 `animation.preset`；
+`animation.duration` 改为总毫秒数；普通通知与 Fidget 的 `max_queue` 均改为 `max_visible`。
+Fidget 的进度动画独立配置，不使用普通通知的阶段预设。
 
 ### 单条通知选项
 
-单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 和 `render`。
+单条通知支持 `title`、`timeout`、`id`、`replace`、`icon`、`keep`、`hide_from_history`、`on_open`、`on_close` 、`style`、`animation` 和 `render`。
 
 - `id` 支持字符串或数字。重用 ID 会更新仍然有效的记录和窗口，不增加历史条目；通知关闭后，相同 ID 会创建新记录。建议使用 `cmdline.nvim:string:bufwrite` 等带来源前缀的 ID，避免冲突。
 - `replace` 可以接收已有 ID 或记录，匹配到有效通知时优先使用；`id` 可以为该记录指定新的用户 ID。这些选项是标准 `vim.notify(message, level, opts)` 签名上的扩展，其他 provider 可以忽略它们。调用方应先合并 UI2 的 `append` 和 `replace_last` 更新，再转发文本。

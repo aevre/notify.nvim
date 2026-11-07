@@ -35,13 +35,11 @@
 ---@field border? string|string[]
 ---@field top_down? boolean
 ---@field max_history? integer
----@field max_queue? integer
+---@field max_visible? integer
 ---@field merge_duplicates? integer|false Merge identical notifications within this many milliseconds.
----@field animate? boolean
----@field animation? table
+---@field animation? table|false
 ---@field notify? boolean
 ---@field style? string Built-in renderer name.
----@field stages? string|table|fun():string Animation stage name or phase selector.
 ---@field render? fun(buf: integer, record: notify.Record, hl: table, config: table): any
 ---@field _bus_id? integer|string
 ---@field _bus_tag? string
@@ -109,11 +107,10 @@
 ---@field gap integer
 ---@field top_down boolean
 ---@field max_history integer
----@field max_queue integer
+---@field max_visible integer
 ---@field merge_duplicates integer|false
 ---@field animation table
 ---@field style string
----@field stages any
 ---@field render fun(buf: integer, record: notify.Record, hl: table, config: table): any
 ---@field icons table<string, string>
 ---@field _max_width number
@@ -150,8 +147,10 @@ local Bus = require("notify.bus")
 local Fidget = require("notify.fidget")
 local LspProgress = require("notify.lsp")
 local LEVELS = require("notify.levels")
-local text = require("notify.text")
+local Renderer = require("notify.render")
+local Animation = require("notify.animation")
 local util = require("notify.util")
+local Stages = require("notify.stages")
 
 local defaults = {
 	timeout = 3000,
@@ -164,11 +163,9 @@ local defaults = {
 	border = "rounded",
 	top_down = true,
 	max_history = 200,
-	max_queue = 5,
+	max_visible = 5,
 	merge_duplicates = false,
-	animate = true,
-	stages = "fade_in_slide_out",
-	animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
+	animation = { preset = "fade_in_slide_out", duration = 240, easing = "outQuad", fps = 60 },
 	style = "default",
 	icons = {},
 	lsp_progress = false,
@@ -262,65 +259,6 @@ local function refresh_dimensions()
 	config.max_height_value = dimension(configured_max_height, vim.o.lines)
 end
 
----@param record notify.Record
----@return string[] lines
-local function render_lines(record)
-	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
-	local title = record.title[1] ~= "" and record.title[1] or "Notification"
-	local message = vim.deepcopy(record.message)
-	local style = config.style
-	if type(style) ~= "string" then
-		style = "default"
-	end
-	if style == "minimal" then
-		message[1] = icon .. " " .. (message[1] or "")
-		return message
-	elseif style == "simple" then
-		message[1] = icon .. " | " .. title .. ": " .. (message[1] or "")
-		return message
-	elseif style == "wrapped-default" or style == "wrapped-compact" then
-		local max_width = math.max(10, config.max_width_value - 2 * config.padding)
-		local wrapped = {}
-		for _, line in ipairs(message) do
-			while vim.fn.strdisplaywidth(line) > max_width do
-				wrapped[#wrapped + 1] = vim.fn.strcharpart(line, 0, max_width)
-				line = vim.fn.strcharpart(line, max_width + 1)
-			end
-			wrapped[#wrapped + 1] = line
-		end
-		message = wrapped
-		if style == "wrapped-compact" then
-			return message
-		end
-	elseif style == "compact" then
-		local width = 0
-		for _, line in ipairs(message) do
-			width = math.max(width, vim.fn.strdisplaywidth(line))
-		end
-		local centered = math.max(0, math.floor((width - vim.fn.strdisplaywidth(title)) / 2))
-		return {
-			string.rep(" ", centered) .. title,
-			string.rep("━", math.max(width, vim.fn.strdisplaywidth(title))),
-			unpack(message),
-		}
-	end
-	return { icon .. "  " .. title, "", unpack(message) }
-end
-
----@param record notify.Record
----@return integer width, integer height
-local function dimensions(record)
-	refresh_dimensions()
-	local lines = render_lines(record)
-	local content_width = config.min_width - 2 * config.padding
-	for _, line in ipairs(lines) do
-		content_width = math.max(content_width, vim.fn.strdisplaywidth(line))
-	end
-	local max_width = math.min(config.max_width_value, vim.o.columns - config.margin.right - 2)
-	local width = math.max(1, math.min(content_width + 2 * config.padding, max_width))
-	return width, math.max(1, math.min(#lines, config.max_height_value))
-end
-
 local function hl_color(group, prop, fallback)
 	local value = vim.api.nvim_get_hl(0, { name = group, link = false })[prop]
 	if type(value) == "number" then
@@ -370,10 +308,8 @@ local function set_fade_highlights(record, amount)
 end
 
 local function window_highlights(record)
-	local level = record.level_name
-	local fading = config.stages == "fade" or config.stages == "fade_in_slide_out"
 	local function group(role)
-		return fading and fade_group(record, role) or "Notify" .. level .. role
+		return fade_group(record, role)
 	end
 	return table.concat({
 		"Normal:" .. group("Body"),
@@ -384,72 +320,16 @@ local function window_highlights(record)
 	}, ",")
 end
 
-local function set_buffer(record, target_width)
-	local win = record.win
-	if not win or not win:valid() then
-		return
-	end
-	local lines = render_lines(record)
-	local width = target_width or vim.api.nvim_win_get_width(win.win)
-	if config.style == "default" or config.style == "wrapped-default" then
-		lines[2] = string.rep("━", math.max(1, width - 2 * config.padding + 1))
-	end
-	record.namespace = record.namespace or vim.api.nvim_create_namespace("notify:" .. record.id)
-	text.setup(win.buf)
-	vim.bo[win.buf].modifiable = true
-	vim.api.nvim_buf_set_lines(win.buf, 0, -1, false, lines)
-	vim.bo[win.buf].modifiable = false
-	vim.api.nvim_buf_clear_namespace(win.buf, record.namespace, 0, -1)
-	text.highlight(win.buf, record.namespace, #lines)
-	local icon = record.icon or config.icons[record.level_name] or LEVELS[record.level_name].icon
-	if config.style == "simple" or config.style == "minimal" or config.style == "default" then
-		util.highlight(
-			win.buf,
-			record.namespace,
-			(config.stages == "fade" or config.stages == "fade_in_slide_out") and fade_group(record, "Icon")
-				or "Notify" .. record.level_name .. "Icon",
-			0,
-			0,
-			#icon
-		)
-	end
-	if config.style == "default" or config.style == "wrapped-default" then
-		util.highlight(
-			win.buf,
-			record.namespace,
-			(config.stages == "fade" or config.stages == "fade_in_slide_out") and fade_group(record, "Separator")
-				or "Notify" .. record.level_name .. "Separator",
-			1,
-			0,
-			#lines[2]
-		)
-	end
-	local body_start = (config.style == "default" or config.style == "wrapped-default" or config.style == "compact")
-			and 2
-		or 0
-	for line = body_start, #lines - 1 do
-		util.highlight(
-			win.buf,
-			record.namespace,
-			(config.stages == "fade" or config.stages == "fade_in_slide_out") and fade_group(record, "Message")
-				or "Notify" .. record.level_name .. "Message",
-			line,
-			0,
-			#lines[line + 1]
-		)
-	end
-end
-
 ---@return notify.Record[]
 local function visible()
 	local result = {}
 	for _, record in pairs(M._notifications) do
-		if not record.closed and record.win and record.win:valid() then
+		if record.win and record.win:valid() then
 			result[#result + 1] = record
 		end
 	end
 	table.sort(result, function(a, b)
-		return a.created < b.created
+		return a.id < b.id
 	end)
 	return result
 end
@@ -463,7 +343,7 @@ local function row_positions()
 		row = vim.o.lines - vim.o.cmdheight - config.margin.bottom
 	end
 	for _, record in ipairs(list) do
-		local _, height = dimensions(record)
+		local height = record.height or 1
 		local total = height + (config.border == "none" and 0 or 2)
 		if config.top_down then
 			rows[record.id] = row
@@ -477,251 +357,203 @@ local function row_positions()
 	return rows
 end
 
-local function animation_enabled(phase)
-	if not config.animate then
+local show_queued
+local close
+local dismissing = false
+
+local function options(record)
+	if record.animation == false or config.animation == false then
 		return false
 	end
-	local stage = config.stages
-	if type(stage) == "function" then
-		stage = stage()
+	local result = vim.tbl_deep_extend("force", {}, config.animation, record.animation or {})
+	if result.preset == "static" then
+		return false
 	end
-	if type(stage) == "table" then
-		return stage[phase] ~= false
-	end
-	return stage == "fade_in_slide_out"
-		or stage == "fade"
-		or stage == "slide"
-		or stage == "slide_out" and phase == "close"
+	return result
 end
 
-local function animation_opts(id)
-	local options = vim.deepcopy(config.animation)
-	options.id, options.int = id, true
-	return options
+local function apply(record, frame)
+	local win = record.win
+	win.opts.row, win.opts.col = frame.row, frame.col
+	win.opts.width, win.opts.height = frame.width, frame.height
+	set_fade_highlights(record, frame.opacity)
+	win:update()
+	redraw_now(win.win)
 end
 
-local function fade_animation_opts(id)
-	local opts = animation_opts(id)
-	opts.int = false
-	return opts
+local function base_frame(record, row)
+	return {
+		row = row,
+		col = math.max(0, vim.o.columns - record.width - config.margin.right),
+		width = record.width,
+		height = record.height,
+		opacity = 1,
+	}
+end
+
+local function start_timeout(record)
+	util.stop_timer(record.timer)
+	record.timer = nil
+	if record.closed or record.timeout == false or record.timeout == 0 then
+		return
+	end
+	record.timer = vim.defer_fn(function()
+		record.timer = nil
+		close(record, true)
+	end, record.timeout or config.timeout)
 end
 
 local function layout()
-	if not Win then
-		return
-	end
 	local rows = row_positions()
 	for _, record in ipairs(visible()) do
-		local target = rows[record.id]
-		if target and record.win:valid() then
-			local current = record.win.opts.row or target
-			if animation_enabled("layout") and Animate and current ~= target then
-				Animate(current, target, function(value)
-					if record.win and record.win:valid() then
-						record.win.opts.row = math.floor(value + 0.5)
-						record.win:update()
-						redraw_now(record.win.win)
-					end
-				end, animation_opts("notify:row:" .. record.id))
-			else
-				record.win.opts.row = target
-				record.win:update()
-			end
+		if not record.closed then
+			Animation.run(record, base_frame(record, rows[record.id]), options(record), apply, function()
+				if record.opening then
+					record.opening = false
+					start_timeout(record)
+				end
+			end)
 		end
 	end
-end
-
----@param buf integer
-local function render_custom(buf, callback, ...)
-	vim.bo[buf].modifiable = true
-	local ok, err = pcall(callback, buf, ...)
-	vim.bo[buf].modifiable = false
-	return ok, err
 end
 
 local function render(record)
-	local width, height = dimensions(record)
-	local win = record.win
-	if not win or not win:valid() then
-		local row = row_positions()[record.id] or 0
-		local col = math.max(0, vim.o.columns - width - config.margin.right)
-		local entering = animation_enabled("open")
-			and (config.stages == "slide" or config.stages == "fade_in_slide_out")
-		local initial_width = entering and 1 or width
-		local initial_col = entering and vim.o.columns - config.margin.right - initial_width or col
-		win = Win({
-			position = "float",
-			relative = "editor",
-			row = row,
-			col = initial_col,
-			width = initial_width,
-			height = height,
-			border = config.border,
-			backdrop = false,
-			zindex = 250,
-			enter = false,
-			focusable = false,
-			style = "minimal",
-			text = { "", "" },
-			bo = { modifiable = false, bufhidden = "wipe" },
-			wo = {
-				wrap = false,
-				linebreak = true,
-				conceallevel = 0,
-				colorcolumn = "",
-				winblend = 0,
-				winhighlight = window_highlights(record),
-			},
-			on_close = function(closed_win)
-				record.win = nil
-				if not record.closed then
-					record.closed = true
-					util.stop_timer(record.timer)
-					record.timer = nil
-					M._notifications[record.id] = nil
-					if record.user_id ~= nil and M._ids[record.user_id] == record.id then
-						M._ids[record.user_id] = nil
-					end
-				end
-				if record.on_close then
-					record.on_close(closed_win.win, record)
-				end
-				layout()
-			end,
-		})
-		record.win = win
-		local fading = config.stages == "fade" or config.stages == "fade_in_slide_out"
-		set_fade_highlights(record, fading and Animate and animation_enabled("open") and 0 or 1)
-		set_buffer(record, width)
-		if record.on_open then
-			record.on_open(win.win, record)
-		end
-		if
-			Animate
-			and (config.stages == "fade" or config.stages == "fade_in_slide_out")
-			and animation_enabled("open")
-		then
-			Animate(0, 1, function(value)
-				if win:valid() then
-					set_fade_highlights(record, value)
-					win:update()
-					redraw_now(win.win)
-				end
-			end, fade_animation_opts("notify:fade:" .. record.id))
-		end
-		if entering and Animate then
-			Animate(initial_width, width, function(value)
-				if win:valid() then
-					local current_width = math.floor(value + 0.5)
-					win.opts.width = current_width
-					win.opts.col = vim.o.columns - config.margin.right - current_width
-					win:update()
-					redraw_now(win.win)
-				end
-			end, animation_opts("notify:width:" .. record.id))
+	refresh_dimensions()
+	local highlights = {}
+	for _, role in ipairs({ "body", "border", "title", "icon", "separator", "message" }) do
+		highlights[role] = fade_group(record, role:sub(1, 1):upper() .. role:sub(2))
+	end
+	Renderer.render(record, config, highlights, renderer_config)
+	if record.win and record.win:valid() then
+		layout()
+		return
+	end
+	local row = config.margin.top
+	local list = visible()
+	local total = record.height + (config.border == "none" and 0 or 2)
+	if config.top_down then
+		for _, item in ipairs(list) do
+			row = row + item.height + (config.border == "none" and 0 or 2) + config.gap
 		end
 	else
-		set_buffer(record, width)
-		win.opts.width, win.opts.height = width, height
-		win.opts.wo.winhighlight = window_highlights(record)
-		win:update()
+		row = vim.o.lines - vim.o.cmdheight - config.margin.bottom - total
+		for _, item in ipairs(list) do
+			row = row - item.height - (config.border == "none" and 0 or 2) - config.gap
+		end
 	end
-	local row = row_positions()[record.id]
-	if row and record.win:valid() then
-		record.win.opts.row = row
-		record.win:update()
+	local base = base_frame(record, row)
+	local opts = options(record)
+	local preset = Stages.resolve(opts)
+	record.frame = Stages.target(base, preset.open)
+	record.opening = true
+	set_fade_highlights(record, record.frame.opacity)
+	record.win = Win({
+		position = "float",
+		relative = "editor",
+		buf = record.buf,
+		row = record.frame.row,
+		col = record.frame.col,
+		width = record.frame.width,
+		height = record.frame.height,
+		border = config.border,
+		backdrop = false,
+		zindex = 250,
+		enter = false,
+		focusable = false,
+		style = "minimal",
+		bo = { modifiable = false, bufhidden = "wipe" },
+		wo = {
+			wrap = false,
+			conceallevel = 0,
+			colorcolumn = "",
+			winblend = 0,
+			winhighlight = window_highlights(record),
+		},
+		on_close = function(win)
+			Animation.cancel(record)
+			util.stop_timer(record.timer)
+			record.timer, record.win = nil, nil
+			record.closed = true
+			M._notifications[record.id] = nil
+			if record.user_id ~= nil and M._ids[record.user_id] == record.id then
+				M._ids[record.user_id] = nil
+			end
+			if record.buf and vim.api.nvim_buf_is_valid(record.buf) then
+				local buf = record.buf
+				vim.schedule(function()
+					if vim.api.nvim_buf_is_valid(buf) then
+						vim.api.nvim_buf_delete(buf, { force = true })
+					end
+				end)
+			end
+			if record.on_close then
+				record.on_close(win.win, record)
+			end
+			if not dismissing then
+				layout()
+				show_queued()
+			end
+		end,
+	})
+	if record.on_open then
+		record.on_open(record.win.win, record)
 	end
+	layout()
 	redraw()
 end
 
----@type fun(record: notify.Record, animate: boolean)
-local close
+local function show(record)
+	util.stop_timer(record.timer)
+	record.timer = nil
+	render(record)
+	if not record.opening then
+		start_timeout(record)
+	end
+end
 
-local function show_queued()
-	local visible_count = #visible()
-	while visible_count < math.max(1, config.max_queue) and #M._queue > 0 do
+show_queued = function()
+	while #visible() < math.max(1, config.max_visible) and #M._queue > 0 do
 		local record = table.remove(M._queue, 1)
 		if not record.closed then
 			record.queued = false
-			render(record)
-			if record.custom_render then
-				render_custom(record.win.buf, record.custom_render, record, {}, renderer_config)
-			end
-			record.timer = record.timeout ~= false
-					and record.timeout ~= 0
-					and vim.defer_fn(function()
-						record.timer = nil
-						close(record, true)
-					end, record.timeout or config.timeout)
-				or nil
-			visible_count = visible_count + 1
+			show(record)
 		end
 	end
 end
 
----@param record notify.Record
----@param animate boolean
-close = function(record, animate)
-	if record.closed then
+close = function(record, automatic)
+	if record.closed and automatic then
 		return
 	end
-	if record.queued then
-		record.closed = true
-		M._notifications[record.id] = nil
-		if record.user_id ~= nil and M._ids[record.user_id] == record.id then
-			M._ids[record.user_id] = nil
-		end
-		return
-	end
-	if type(record.keep) == "function" and record.keep() then
-		vim.defer_fn(function()
-			close(record, animate)
+	if automatic and (record.keep == true or type(record.keep) == "function" and record.keep()) then
+		record.timer = vim.defer_fn(function()
+			record.timer = nil
+			close(record, true)
 		end, 500)
 		return
 	end
 	record.closed = true
 	util.stop_timer(record.timer)
 	record.timer = nil
-	local win = record.win
-	if win and win:valid() then
-		if animate and Animate and animation_enabled("close") then
-			if config.stages == "fade" then
-				Animate(1, 0, function(value, ctx)
-					if win:valid() then
-						set_fade_highlights(record, value)
-						win:update()
-						redraw_now(win.win)
-						if ctx and ctx.done then
-							win:close()
-						end
-					end
-				end, fade_animation_opts("notify:fade:" .. record.id))
-			else
-				local from = win.opts.width or dimensions(record)
-				Animate(from, 1, function(value, ctx)
-					if win:valid() then
-						local current_width = math.max(1, math.floor(value + 0.5))
-						win.opts.width = current_width
-						win.opts.col = vim.o.columns - config.margin.right - current_width
-						win:update()
-						redraw_now(win.win)
-						if ctx and ctx.done then
-							win:close()
-						end
-					end
-				end, animation_opts("notify:width:" .. record.id))
-			end
+	if record.win and record.win:valid() then
+		local opts = options(record)
+		local preset = Stages.resolve(opts)
+		if automatic and preset.close then
+			Animation.run(record, Stages.target(record.frame, preset.close), opts, apply, function()
+				if record.win then
+					record.win:close()
+				end
+			end)
 		else
-			win:close()
+			Animation.cancel(record)
+			record.win:close()
+		end
+	else
+		M._notifications[record.id] = nil
+		if record.user_id ~= nil and M._ids[record.user_id] == record.id then
+			M._ids[record.user_id] = nil
 		end
 	end
-	M._notifications[record.id] = nil
-	if record.user_id ~= nil and M._ids[record.user_id] == record.id then
-		M._ids[record.user_id] = nil
-	end
-	layout()
-	show_queued()
-	redraw()
 end
 
 ---@param ref? integer|string|notify.Record
@@ -743,7 +575,8 @@ local function find_record(ref)
 		return nil
 	end
 	local id = normalize_id(ref)
-	return M._notifications[M._ids[id]] or M._notifications[id]
+	local record = M._notifications[M._ids[id]] or M._notifications[id]
+	return record and not record.closed and record or nil
 end
 
 ---@param message? string|string[]|table[]
@@ -806,22 +639,19 @@ local function notify_impl(message, level, opts, source, reserved_id)
 			old.keep = opts.keep
 		end
 		old.closed = false
-		old.created = util.now()
+		if duplicate then
+			old.created = util.now()
+		end
 		old.on_open, old.on_close = opts.on_open or old.on_open, opts.on_close or old.on_close
+		old.custom_render = opts.render or old.custom_render
+		old.style = opts.style or old.style
+		if opts.animation ~= nil then
+			old.animation = opts.animation
+		end
 		if old.queued then
 			return old
 		end
-		render(old)
-		if opts.render then
-			render_custom(old.win.buf, opts.render, old, {}, renderer_config)
-		end
-		old.timer = old.timeout ~= false
-				and old.timeout ~= 0
-				and vim.defer_fn(function()
-					old.timer = nil
-					close(old, true)
-				end, old.timeout or config.timeout)
-			or nil
+		show(old)
 		return old
 	end
 	if type(reserved_id) == "number" then
@@ -847,6 +677,8 @@ local function notify_impl(message, level, opts, source, reserved_id)
 		on_close = opts.on_close,
 		hide_from_history = opts.hide_from_history,
 		custom_render = opts.render,
+		style = opts.style,
+		animation = opts.animation,
 		created = util.now(),
 		closed = false,
 		debug = config.debug and {
@@ -866,22 +698,12 @@ local function notify_impl(message, level, opts, source, reserved_id)
 	if resolved_id ~= nil then
 		M._ids[resolved_id] = id
 	end
-	local queued = #visible() >= math.max(1, config.max_queue)
+	local queued = #visible() >= math.max(1, config.max_visible)
 	if queued then
 		record.queued = true
 		M._queue[#M._queue + 1] = record
 	else
-		render(record)
-		if opts.render then
-			render_custom(record.win.buf, opts.render, record, {}, renderer_config)
-		end
-		record.timer = opts.timeout ~= false
-				and opts.timeout ~= 0
-				and vim.defer_fn(function()
-					record.timer = nil
-					close(record, true)
-				end, opts.timeout or config.timeout)
-			or nil
+		show(record)
 	end
 	return record
 end
@@ -952,10 +774,16 @@ function M.setup(opts)
 			return config.min_width
 		end,
 		max_width = function()
-			return config.max_width_value
+			return math.max(1, math.min(config.max_width_value, vim.o.columns - config.margin.right - 2))
 		end,
 		max_height = function()
-			return config.max_height_value
+			return math.max(
+				1,
+				math.min(
+					config.max_height_value,
+					vim.o.lines - vim.o.cmdheight - config.margin.top - config.margin.bottom - 2
+				)
+			)
 		end,
 	})
 	Win = require("win")
@@ -1093,9 +921,13 @@ end
 ---@param opts? { pending?: boolean }
 function M.dismiss(opts)
 	opts = opts or {}
+	-- 批量关闭期间禁止补队列，避免刚关闭一个窗口就打开等待中的通知。
+	dismissing = true
 	for _, record in ipairs(vim.tbl_values(M._notifications)) do
 		close(record, false)
 	end
+	M._queue = {}
+	dismissing = false
 	if opts.pending then
 		Fidget.dismiss()
 	end

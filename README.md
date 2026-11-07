@@ -40,19 +40,17 @@ require("notify").setup({
   border = "rounded",
   gap = 0,
   margin = { top = 1, right = 1, bottom = 0 },
-  animate = true,
   style = "default",
-  stages = "fade_in_slide_out",
-  animation = { duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 },
+  animation = { preset = "fade_in_slide_out", duration = 240, easing = "outQuad", fps = 60 },
   max_history = 200,
-  max_queue = 5,
+  max_visible = 5,
   merge_duplicates = false, -- milliseconds, for example 500
   top_down = true,
   icons = { INFO = "ℹ", WARN = "⚠" },
   lsp_progress = true,
   picker = "telescope", -- optional default: "fzf", "telescope", or "select"
   fidget = {
-    max_queue = 5,
+    max_visible = 5,
     max_width = 0.4,
     margin_left = 1,
     margin_right = 1,
@@ -80,12 +78,10 @@ require("notify").setup({
 | `border`           | `"rounded"`                                                                 | Border style passed to win.nvim, such as `"single"`, `"rounded"`, or `"none"`.                                                                                                                                                      |
 | `top_down`         | `true`                                                                      | Stack from the top when true; stack upward from the bottom when false.                                                                                                                                                              |
 | `max_history`      | `200`                                                                       | Maximum number of notification records retained in memory.                                                                                                                                                                          |
-| `max_queue`        | `5`                                                                         | Maximum number of visible notification windows. Additional notifications wait in arrival order.                                                                                                                                     |
+| `max_visible`        | `5`                                                                         | Maximum number of visible notification windows. Additional notifications wait in arrival order.                                                                                                                                     |
 | `merge_duplicates` | `false`                                                                     | Reuse an open notification when its title, level, and message are identical within this many milliseconds. The reused notification's timeout restarts and history keeps one record.                                                 |
-| `animate`          | `true`                                                                      | Master switch for notification transitions and animated restacking.                                                                                                                                                                 |
 | `style`            | `"default"`                                                                 | Renderer name: `default`, `minimal`, `simple`, `compact`, `wrapped-compact`, or `wrapped-default`.                                                                                                                                  |
-| `stages`           | `"fade_in_slide_out"`                                                       | Transition preset: `fade`, `slide`, `slide_out`, `fade_in_slide_out`, or `static`. A table can independently disable `open`, `layout`, or `close` by setting that phase to `false`; a function may return a preset or such a table. |
-| `animation`        | `{ duration = { step = 0.25, total = 240 }, easing = "outQuad", fps = 60 }` | Options passed to animate.nvim: duration, easing, and frame rate. `duration` can be a number or a `{ step, total }` table.                                                                                                          |
+| `animation` | `{ preset = "fade_in_slide_out", duration = 240, easing = "outQuad", fps = 60 }` | Preset, total duration in milliseconds, easing, and frame rate; `false` disables animation. |
 | `routes`           | `nil`                                                                       | Ordered bus routes. Without custom routes, built-in routing sends `vim.notify` and `notify.send()` to notifications and `msg.show.*` to the notification backend.                                                                   |
 | `fidget`           | `nil`                                                                       | Fidget options. See the Fidget section below for task capacity, margins, timeout, and spinner configuration.                                                                                                                        |
 | `icons`            | `{}`                                                                        | Optional level-to-icon overrides, keyed by `TRACE`, `DEBUG`, `INFO`, `WARN`, or `ERROR`; unspecified levels use their built-in icons.                                                                                               |
@@ -100,7 +96,7 @@ Configure Fidget through the top-level `fidget` option:
 
 ```lua
 fidget = {
-  max_queue = 5,
+  max_visible = 5,
   max_width = 0.4,
   margin_left = 1,
   margin_right = 1,
@@ -117,24 +113,36 @@ fidget = {
 - Frame lists must contain non-empty strings; invalid lists fall back to the built-in frames.
 - Fidget messages accept `timeout`, `title`, `level`, and `icon`. Levels are `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, or `none`.
 - Each task gets a separate transparent, borderless window. New tasks enter at the bottom and push older tasks upward with animate.nvim transitions.
-- `max_queue` limits visible task windows. Additional tasks wait in arrival order.
+- `max_visible` limits visible task windows. Additional tasks wait in arrival order.
 
 Fidget is a general-purpose message surface. The separate LSP progress producer sends updates directly to it, enables a spinner, and supplies its own six-frame list. Fidget messages and progress are not added to notification history.
 
 ### Renderers and animation
 
-- `default` shows an icon, title, separator, and message.
-- `wrapped-default` uses the same layout and wraps long message lines.
-- `minimal` shows the icon and first message line; `simple` combines the icon, title, and first line.
-- `compact` places the title above a separator and message; `wrapped-compact` shows wrapped message lines without a title row.
+`style` is independent of animation: choose `default`, `compact`, `minimal`, `simple`, `wrapped-default`, or `wrapped-compact`.
+`default` shows the icon, title, time, separator, and message; `compact` omits the time and separator.
+`minimal` shows the icon and message; `simple` combines the icon, title, and first message line.
+The wrapped variants wrap by display width without dropping Unicode or combining characters.
+Buffers are rendered before measuring text and virtual text, including custom renderers.
 
-Use `style` to select a built-in renderer. Use `animate = false` or `stages = "static"` to disable transitions. `stages` selects the transition preset, while `animation` passes timing and easing options to animate.nvim. Fractional `max_width` and `max_height` scale with the current editor dimensions.
+`animation.preset` accepts `static`, `fade`, `slide`, `slide_out`, or `fade_in_slide_out`.
+The combined preset fades in, then shrinks toward the right while fading out. Set `animation = false` to disable transitions.
+`duration` is the total transition time in milliseconds; geometry and opacity share one progress value.
+Timeout starts after entry completes, and visible capacity is released after exit completes.
+Replacement cancels the old animation and continues from its current state. `keep` only postpones automatic closing; manual dismissal cancels animations and timers.
 
-Notifications stack at the top-right. Fidget tasks use separate content-width, borderless bottom-right windows and push older tasks upward. Fidget messages and progress are not added to notification history.
+For custom stages, use `animation.preset = { open = { opacity = 0 }, close = { width = 1, opacity = 0 } }`.
+Stage tables accept `row`, `col`, `width`, `height`, and `opacity` (0–1).
+Open specifies initial values; close specifies final values. Changing width without col preserves the right edge.
+Both `static` and `animation = false` disable animated restacking.
+
+Migration: remove `animate` and `stages`; use `animation = false` or `animation.preset`.
+Change `animation.duration` to total milliseconds and rename notification and Fidget `max_queue` to `max_visible`.
+Fidget progress animations remain independently configured and do not use notification stage presets.
 
 ### Per-notification options
 
-Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, and `render`.
+Per-notification options include `title`, `timeout`, `id`, `replace`, `icon`, `keep`, `hide_from_history`, `on_open`, `on_close`, `style`, `animation`, and `render`.
 
 - `id` accepts a string or number. Reusing it updates the active record and window without adding a history entry; after the notification closes, the same ID creates a new record. Use producer prefixes such as `cmdline.nvim:string:bufwrite` to avoid collisions.
 - `replace` accepts an existing ID or record and takes precedence when it resolves to an active notification; `id` can assign that record a new user ID. These options extend the standard `vim.notify(message, level, opts)` signature; other providers may ignore them. Producers must merge UI2 `append` and `replace_last` updates before forwarding text.

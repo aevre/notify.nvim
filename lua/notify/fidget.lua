@@ -1,5 +1,5 @@
 ---@class notify.FidgetConfig
----@field max_queue? integer Maximum visible progress windows.
+---@field max_visible? integer Maximum visible progress windows.
 ---@field max_width? number Maximum window width; values below 1 are a fraction of editor width.
 ---@field margin_left? integer Left editor margin.
 ---@field margin_right? integer Right editor margin.
@@ -142,7 +142,7 @@ end
 local function layout()
 	local all_tasks = tasks()
 	local list = {}
-	local last = math.min(#all_tasks, math.max(1, current_opts.max_queue or 5))
+	local last = math.min(#all_tasks, math.max(1, current_opts.max_visible or 5))
 	for index = 1, last do
 		list[#list + 1] = all_tasks[index]
 	end
