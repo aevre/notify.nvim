@@ -47,6 +47,9 @@ function M.source(kind)
 	for index, record in ipairs(records(kind)) do
 		local message = type(record.message) == "table" and table.concat(record.message, " ") or record.message
 		local title = section(record.title)
+		if title == "Messages" or title == "Notification" then
+			title = ""
+		end
 		local time = record.title and record.title[2] or ""
 		local levels = require("notify.levels")
 		local icon = record.icon or (levels[section(record.level)] and levels[section(record.level)].icon) or ""
@@ -68,14 +71,14 @@ end
 ---@return string[]
 function M.preview(record)
 	local title = section(record.title)
-	local lines = {
-		"# " .. (title ~= "" and title or "Notification"),
-		"",
-		string.format("- **Level**: `%s`", section(record.level)),
-	}
+	local lines =
+		{ "# " .. (title ~= "" and title ~= "Messages" and title ~= "Notification" and title or "Notifications") }
 	if type(record.title) == "table" and record.title[2] and record.title[2] ~= "" then
-		lines[#lines + 1] = string.format("- **Time**: `%s`", record.title[2])
+		lines[#lines + 1] = ""
+		lines[#lines + 1] = "**Time:** " .. record.title[2]
 	end
+	lines[#lines + 1] = ""
+	lines[#lines + 1] = string.format("- **Level**: `%s`", section(record.level))
 	if record.source then
 		lines[#lines + 1] = string.format("- **Source**: `%s`", record.source)
 	end
@@ -139,12 +142,18 @@ function M.format_entry(record, index, ansi_from_hl)
 	local message = type(record.message) == "table" and table.concat(record.message, " ") or record.message
 	local time = record.title and record.title[2] or ""
 	local title = section(record.title)
+	if title == "Messages" or title == "Notification" then
+		title = ""
+	end
+	local function color(group, text)
+		return (ansi_from_hl(group, text))
+	end
 	local colored = table.concat({
-		ansi_from_hl("Comment", one_line(time)),
-		ansi_from_hl("NotifyLogTitle", one_line(title)),
-		ansi_from_hl(highlight, one_line(icon)),
-		ansi_from_hl(highlight, "[" .. one_line(level) .. "]"),
-		one_line(message),
+		color("Normal", one_line(time)),
+		color("NotifyLogTitle", one_line(title)),
+		color(highlight, one_line(icon)),
+		color(highlight, "[" .. one_line(level) .. "]"),
+		color("Normal", one_line(message)),
 	}, " ")
 	return string.format("%05d %s", index, colored)
 end
