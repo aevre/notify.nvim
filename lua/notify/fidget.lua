@@ -89,21 +89,6 @@ local spinner_timer
 local redraw_pending = false
 ---@type animate|nil
 local Animate
-
-local function redraw()
-	if redraw_pending then
-		return
-	end
-	redraw_pending = true
-	vim.schedule(function()
-		redraw_pending = false
-		if vim.api.nvim__redraw then
-			vim.api.nvim__redraw({ flush = true, cursor = false })
-		else
-			vim.cmd("redraw!")
-		end
-	end)
-end
 local next_message_id = 0
 local next_sequence = 0
 local function sequence()
@@ -152,6 +137,39 @@ end
 local render
 local visible_tasks = {}
 local layout_pending = false
+
+local function redraw()
+	if redraw_pending then
+		return
+	end
+	redraw_pending = true
+	vim.schedule(function()
+		redraw_pending = false
+		local wins = {}
+		for _, item in ipairs(visible_tasks) do
+			local win = item.task.win
+			if win and win:valid() then
+				wins[#wins + 1] = win.win
+			end
+		end
+		if #wins == 0 then
+			return
+		end
+		if not vim.api.nvim__redraw then
+			vim.cmd("redraw")
+			return
+		end
+		for index, win in ipairs(wins) do
+			vim.api.nvim__redraw({
+				win = win,
+				range = { 0, 1 },
+				valid = true,
+				flush = index == #wins,
+				cursor = false,
+			})
+		end
+	end)
+end
 
 local function request_layout()
 	if layout_pending then
@@ -230,7 +248,6 @@ end
 render = function()
 	if not next(progress) then
 		clear()
-		redraw()
 		return
 	end
 	layout()

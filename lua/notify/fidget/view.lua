@@ -10,6 +10,18 @@ function M.setup(animate, spinner_fn)
 	Animate, spinner = animate, spinner_fn
 end
 
+local function set_highlight(name, value)
+	local current = vim.api.nvim_get_hl(0, { name = name, link = false })
+	local expected = vim.deepcopy(value)
+	if expected.bg == "NONE" then
+		expected.bg = nil
+	end
+	if vim.fn.hlexists(name) == 1 and vim.deep_equal(current, expected) then
+		return
+	end
+	vim.api.nvim_set_hl(0, name, value)
+end
+
 function M.close(task, key)
 	if Animate then
 		Animate.del("notify:fidget:" .. key)
@@ -88,12 +100,12 @@ local function content(task, opts, row, index)
 		task.line = line
 	end
 	vim.bo[task.win.buf].modifiable = false
-	vim.api.nvim_set_hl(0, "NotifyFidgetBackground", { bg = "NONE" })
+	set_highlight("NotifyFidgetBackground", { bg = "NONE" })
 	local level_highlight = "NotifyProgressTask"
 	if level ~= "none" then
 		level_highlight = "NotifyFidget" .. level
 		local source = vim.api.nvim_get_hl(0, { name = "Notify" .. level .. "Icon", link = false })
-		vim.api.nvim_set_hl(0, level_highlight, { fg = source.fg })
+		set_highlight(level_highlight, { fg = source.fg })
 	end
 	local ns = vim.api.nvim_create_namespace("notify-progress")
 	vim.api.nvim_buf_clear_namespace(task.win.buf, ns, 0, -1)

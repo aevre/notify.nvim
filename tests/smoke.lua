@@ -428,14 +428,25 @@ for _, win in ipairs(fidget_wins) do
 	has_event_icon = has_event_icon or line:find("LSP  INFO  Index", 1, true) ~= nil
 end
 check(has_event_icon, "fidget uses event icon")
+local invalid_fidget_redraws = 0
+local fidget_redraws = 0
+local original_redraw = vim.api.nvim__redraw
+vim.api.nvim__redraw = function(opts)
+	fidget_redraws = fidget_redraws + 1
+	if not opts.win or opts.valid ~= true or not vim.deep_equal(opts.range, { 0, 1 }) then
+		invalid_fidget_redraws = invalid_fidget_redraws + 1
+	end
+	return original_redraw(opts)
+end
 fidget.progress("spinning", {
 	token = "custom-spinner",
 	spinner = true,
 	spinner_frames = { "A", "B" },
+	spinner_interval = 50,
 	title = "Custom",
 })
 check(
-	vim.wait(100, function()
+	vim.wait(120, function()
 		for _, win in ipairs(vim.api.nvim_list_wins()) do
 			local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1]
 			if line and (line:find("A  INFO", 1, true) or line:find("B  INFO", 1, true)) then
@@ -446,6 +457,12 @@ check(
 	end, 10),
 	"custom spinner frame rendered"
 )
+vim.wait(120, function()
+	return false
+end, 10)
+vim.api.nvim__redraw = original_redraw
+check(fidget_redraws > 0, "spinner refresh explicitly submits UI updates")
+check(invalid_fidget_redraws == 0, "spinner redraw stays scoped to each Fidget line")
 local message_id = fidget.send("Build", "Compiling")
 check(message_id ~= nil, "fidget send creates an updateable task")
 fidget.update(message_id, "Done")
@@ -597,6 +614,24 @@ vim.o.lines = original_lines
 local target = entries[1].task.target_row
 view.refresh(entries, view_opts)
 check(entries[1].task.target_row == target, "spinner refresh does not restart layout")
+local spinner_task = { title = "spinner redraw", level = "INFO", spinner = { "A", "B" }, spinner_interval = 50 }
+local spinner_items = { { key = "spinner-redraw", task = spinner_task } }
+view.layout(spinner_items, { animate = false }, changed, function() end)
+local repeated_fidget_highlights = 0
+local original_set_hl = vim.api.nvim_set_hl
+vim.api.nvim_set_hl = function(ns, name, value)
+	if name == "NotifyFidgetBackground" or name == "NotifyFidgetINFO" then
+		repeated_fidget_highlights = repeated_fidget_highlights + 1
+	end
+	return original_set_hl(ns, name, value)
+end
+vim.wait(120, function()
+	view.refresh(spinner_items, { animate = false })
+	return false
+end, 10)
+vim.api.nvim_set_hl = original_set_hl
+check(repeated_fidget_highlights == 0, "spinner refresh preserves unchanged global highlights")
+view.close(spinner_task, "spinner-redraw")
 for _, item in ipairs(entries) do
 	view.close(item.task, item.key)
 end
@@ -637,30 +672,45 @@ for _, preset in ipairs({ "static", "fade", "slide", "slide_out", "fade_in_slide
 	notify.dismiss()
 end
 notify.setup({ animation = { preset = "fade", duration = 240, fps = 60 }, max_visible = 1 })
+local forced_notification_redraws = 0
+local redraw = vim.api.nvim__redraw
+vim.api.nvim__redraw = function(opts)
+	forced_notification_redraws = forced_notification_redraws + 1
+	return redraw(opts)
+end
+local fade_frames = 0
+local global_fade_writes = 0
+local set_hl = vim.api.nvim_set_hl
+vim.api.nvim_set_hl = function(ns, name, value)
+	if name:find("^NotifyFade") then
+		fade_frames = fade_frames + 1
+		global_fade_writes = global_fade_writes + (ns == 0 and 1 or 0)
+	end
+	return set_hl(ns, name, value)
+end
 local fade_started = vim.uv.hrtime()
 local fading = vim.notify("smooth fade", nil, { timeout = 30 })
 local geometry_updates = 0
 local fade_win = fading.win
+check(
+	vim.api.nvim_get_hl_ns({ winid = fade_win.win }) == fading.highlight_namespace,
+	"notification activates its private highlight namespace"
+)
 local update_win = fade_win.update
 fade_win.update = function(self)
 	geometry_updates = geometry_updates + 1
 	return update_win(self)
 end
-local fade_frames = 0
-local set_hl = vim.api.nvim_set_hl
-vim.api.nvim_set_hl = function(ns, name, value)
-	if name == "NotifyFade" .. fading.id .. "Body" then
-		fade_frames = fade_frames + 1
-	end
-	return set_hl(ns, name, value)
-end
 local fade_completed = vim.wait(1000, function()
 	return fading.win == nil
 end, 5)
 vim.api.nvim_set_hl = set_hl
+vim.api.nvim__redraw = redraw
 check(fade_completed, "fade entry and exit finish within configured duration tolerance")
 check((vim.uv.hrtime() - fade_started) / 1e6 >= 400, "fade does not skip configured transition duration")
 check(fade_frames >= 24, "fade samples opacity at configured frame rate")
+check(global_fade_writes == 0, "fade animation keeps generated highlights window-local")
+check(forced_notification_redraws == 0, "notification animation does not force UI flushes")
 check(geometry_updates == 0, "opacity-only animation does not reconfigure window geometry")
 notify.dismiss()
 notify.setup({ animation = { preset = "slide_out", duration = 120 }, max_visible = 2, top_down = true })

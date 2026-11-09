@@ -2,7 +2,6 @@ local M = {}
 
 function M.setup(buf)
 	vim.bo[buf].filetype = "markdown"
-	pcall(vim.treesitter.start, buf, "markdown")
 end
 
 function M.highlight(buf, ns, line_count)

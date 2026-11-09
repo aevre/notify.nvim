@@ -35,6 +35,7 @@
 ---@field timer? integer|uv.uv_timer_t
 ---@field win? win
 ---@field namespace? integer
+---@field highlight_namespace? integer
 ---@field custom_render? fun(buf: integer, record: notify.Record, hl: table, config: table)
 ---@field debug? notify.DebugInfo
 ---@field source? string
@@ -59,26 +60,6 @@ local config
 ---@type table
 local renderer_config
 local refresh_dimensions = Config.refresh_dimensions
-
-local redraw_pending = false
-local function redraw_now(win)
-	if vim.api.nvim__redraw then
-		vim.api.nvim__redraw({ win = win, flush = true, cursor = false })
-	else
-		vim.cmd("redraw!")
-	end
-end
-
-local function redraw()
-	if redraw_pending then
-		return
-	end
-	redraw_pending = true
-	vim.schedule(function()
-		redraw_pending = false
-		redraw_now()
-	end)
-end
 
 ---@type win
 local Win
@@ -159,6 +140,18 @@ local function fade_group(record, suffix)
 end
 
 local function set_fade_highlights(record, amount)
+	if not record.highlight_namespace then
+		record.highlight_namespace = vim.api.nvim_create_namespace("notify-fade:" .. record.id)
+		for group, role in pairs({
+			Normal = "Body",
+			NormalNC = "Body",
+			EndOfBuffer = "Body",
+			FloatBorder = "Border",
+			FloatTitle = "Title",
+		}) do
+			vim.api.nvim_set_hl(record.highlight_namespace, group, { link = fade_group(record, role) })
+		end
+	end
 	local level = record.level_name
 	local normal_bg = hl_color("Normal", "bg", "NONE")
 	local body_bg = hl_color("Notify" .. level .. "Body", "bg", normal_bg)
@@ -169,7 +162,11 @@ local function set_fade_highlights(record, amount)
 		local source = "Notify" .. level .. role
 		local target = hl_color(source, "fg", hl_color("Normal", "fg", "#ffffff"))
 		local fg = transparent and blend_color("#000000", target, amount) or blend_color(fade_bg, target, amount)
-		vim.api.nvim_set_hl(0, fade_group(record, role), { fg = fg, bg = fade_bg, bold = role == "Title" })
+		vim.api.nvim_set_hl(record.highlight_namespace, fade_group(record, role), {
+			fg = fg,
+			bg = fade_bg,
+			bold = role == "Title",
+		})
 	end
 end
 
@@ -307,7 +304,6 @@ local function apply(record, frame)
 	if geometry_changed then
 		win:update()
 	end
-	redraw_now(win.win)
 	retry_queue()
 end
 
@@ -424,11 +420,11 @@ local function render(record)
 			end
 		end,
 	})
+	vim.api.nvim_win_set_hl_ns(record.win.win, record.highlight_namespace)
 	if record.on_open then
 		record.on_open(record.win.win, record)
 	end
 	layout()
-	redraw()
 	return true
 end
 
