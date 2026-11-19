@@ -672,10 +672,17 @@ for _, preset in ipairs({ "static", "fade", "slide", "slide_out", "fade_in_slide
 	notify.dismiss()
 end
 notify.setup({ animation = { preset = "fade", duration = 240, fps = 60 }, max_visible = 1 })
-local forced_notification_redraws = 0
+local notification_redraws = 0
+local invalid_notification_redraws = 0
+local notification_win
 local redraw = vim.api.nvim__redraw
 vim.api.nvim__redraw = function(opts)
-	forced_notification_redraws = forced_notification_redraws + 1
+	if opts.win == notification_win then
+		notification_redraws = notification_redraws + 1
+		if opts.valid ~= false or opts.flush ~= true then
+			invalid_notification_redraws = invalid_notification_redraws + 1
+		end
+	end
 	return redraw(opts)
 end
 local fade_frames = 0
@@ -692,6 +699,7 @@ local fade_started = vim.uv.hrtime()
 local fading = vim.notify("smooth fade", nil, { timeout = 30 })
 local geometry_updates = 0
 local fade_win = fading.win
+notification_win = fade_win.win
 check(
 	vim.api.nvim_get_hl_ns({ winid = fade_win.win }) == fading.highlight_namespace,
 	"notification activates its private highlight namespace"
@@ -710,7 +718,8 @@ check(fade_completed, "fade entry and exit finish within configured duration tol
 check((vim.uv.hrtime() - fade_started) / 1e6 >= 400, "fade does not skip configured transition duration")
 check(fade_frames >= 24, "fade samples opacity at configured frame rate")
 check(global_fade_writes == 0, "fade animation keeps generated highlights window-local")
-check(forced_notification_redraws == 0, "notification animation does not force UI flushes")
+check(notification_redraws > 0, "fade animation submits highlight updates")
+check(invalid_notification_redraws == 0, "fade redraw stays scoped to its notification window")
 check(geometry_updates == 0, "opacity-only animation does not reconfigure window geometry")
 notify.dismiss()
 notify.setup({ animation = { preset = "slide_out", duration = 120 }, max_visible = 2, top_down = true })
@@ -814,6 +823,11 @@ local next_record = vim.notify("next", nil, { timeout = false })
 external.win:close()
 check(next_record.win and next_record.win:valid(), "external close drains queue")
 notify.dismiss()
+notify.setup({ animation = false, timeout = false, lsp_progress = false })
+local persistent_default = vim.notify("global persistent timeout")
+vim.wait(20)
+check(persistent_default.win and persistent_default.timer == nil and not persistent_default.closed, "global timeout false")
+notify.dismiss({ pending = true })
 notify.restore()
 check(vim.notify == original_notify, "notify restore")
 local history_before_emit = #notify.history()

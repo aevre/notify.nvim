@@ -303,6 +303,8 @@ local function apply(record, frame)
 	set_fade_highlights(record, frame.opacity)
 	if geometry_changed then
 		win:update()
+	else
+		win:redraw()
 	end
 	retry_queue()
 end
@@ -320,13 +322,17 @@ end
 local function start_timeout(record)
 	util.stop_timer(record.timer)
 	record.timer = nil
-	if record.closed or record.timeout == false or record.timeout == 0 then
+	local timeout = record.timeout
+	if timeout == nil then
+		timeout = config.timeout
+	end
+	if record.closed or timeout == false or timeout == 0 then
 		return
 	end
 	record.timer = vim.defer_fn(function()
 		record.timer = nil
 		close(record, true)
-	end, record.timeout or config.timeout)
+	end, timeout)
 end
 
 local layout
