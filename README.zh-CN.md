@@ -242,4 +242,6 @@ notify.nvim 负责 `vim.notify` 和通知历史。如果同时安装 Noice，应
 
 ## 开发
 
+在 Neovim 中运行 `:checkhealth notify` 检查必需依赖和可选集成；`make health` 会以 headless 模式验证同一个 provider。
+
 在仓库根目录运行 `make check`，它会执行格式检查、lint 和 headless smoke 测试。带 guard 的 `plugin/notify.lua` 入口应用默认配置；仅 `require("notify")` 不会安装处理器。runtime 启动逻辑不得放入 `lua/notify/`，且插件管理器随后应用用户选项时，`setup()` 必须保持安全。

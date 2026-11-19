@@ -241,4 +241,6 @@ notify.nvim owns `vim.notify` and its notification history. If Noice is also ins
 
 ## Development
 
+Run `:checkhealth notify` in Neovim to inspect required and optional integrations. `make health` exercises the same provider headlessly.
+
 Run `make check` from the repository root; it runs formatting, lint, and headless smoke tests. The guarded `plugin/notify.lua` entrypoint applies defaults; requiring `notify` alone does not install handlers. Keep runtime bootstrapping out of `lua/notify/`, and keep `setup()` safe when a plugin manager applies user options afterward.
