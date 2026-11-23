@@ -6,7 +6,10 @@ function M.open(opts)
 	local kind = opts.kind == "fidget" and "fidget" or "notification"
 	local items = source.source(kind)
 	if #items == 0 then
-		vim.notify(kind == "fidget" and "No Fidget history found" or "No notifications found", vim.log.levels.WARN)
+		vim.notify(
+			kind == "fidget" and "No Fidget history found" or "No notifications found",
+			vim.log.levels.WARN
+		)
 		return
 	end
 	local choices = vim.tbl_map(function(item)

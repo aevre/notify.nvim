@@ -77,7 +77,11 @@ local defaults = {
 	max_width = 0.4,
 	min_width = 40,
 	max_height = 0.6,
-	margin = { top = 1, right = 1, bottom = 0 },
+	margin = {
+		top = 1,
+		right = 1,
+		bottom = 0,
+	},
 	padding = 1,
 	gap = 0,
 	border = "rounded",
@@ -85,7 +89,12 @@ local defaults = {
 	max_history = 200,
 	max_visible = 5,
 	merge_duplicates = false,
-	animation = { preset = "fade_in_slide_out", duration = 240, easing = "outQuad", fps = 60 },
+	animation = {
+		preset = "fade_in_slide_out",
+		duration = 240,
+		easing = "outQuad",
+		fps = 60,
+	},
 	style = "default",
 	icons = {},
 	lsp_progress = false,
@@ -129,7 +138,10 @@ function M.setup(opts)
 			return config.min_width
 		end,
 		max_width = function()
-			return math.max(1, math.min(config.max_width_value, vim.o.columns - config.margin.right - 2))
+			return math.max(
+				1,
+				math.min(config.max_width_value, vim.o.columns - config.margin.right - 2)
+			)
 		end,
 		max_height = function()
 			return math.max(

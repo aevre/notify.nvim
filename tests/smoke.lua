@@ -24,8 +24,12 @@ local highlight_ns = vim.api.nvim_create_namespace("notify-smoke-highlight")
 vim.api.nvim_buf_set_lines(highlight_buf, 0, -1, false, { "短文" })
 util.highlight(highlight_buf, highlight_ns, "Normal", 0, 0, 100)
 util.highlight(highlight_buf, highlight_ns, "Normal", 0, 100, 101)
-local highlight_marks = vim.api.nvim_buf_get_extmarks(highlight_buf, highlight_ns, 0, -1, { details = true })
-check(#highlight_marks == 1 and highlight_marks[1][4].end_col == #"短文", "highlight columns clamp to line")
+local highlight_marks =
+	vim.api.nvim_buf_get_extmarks(highlight_buf, highlight_ns, 0, -1, { details = true })
+check(
+	#highlight_marks == 1 and highlight_marks[1][4].end_col == #"短文",
+	"highlight columns clamp to line"
+)
 vim.api.nvim_buf_delete(highlight_buf, { force = true })
 
 notify.setup({
@@ -49,20 +53,29 @@ check(first.id and first.level == "INFO", "notification record shape")
 check(first.message[1] == "first message", "notification message")
 check(first.title[1] == "Smoke", "notification title")
 check(first.win and not first.win.backdrop, "notifications do not create a backdrop")
-check(vim.api.nvim_win_get_config(first.win.win).zindex > 200, "notifications stay above cmdline floats")
+check(
+	vim.api.nvim_win_get_config(first.win.win).zindex > 200,
+	"notifications stay above cmdline floats"
+)
 check(notify.history()[1] == first, "notification history")
 local notification_source = require("notify.integrations.fzf")
 local notification_records = notification_source.source()
 check(notification_records[1].raw == first, "notification source history")
 check(notification_records[1].display:find("Smoke", 1, true) ~= nil, "notification source display")
 check(notification_source.preview(first)[1] == "# Smoke", "notification source preview")
-check(first.debug.source == "vim.notify" and first.debug.tag == "notify", "debug metadata captures source and tag")
+check(
+	first.debug.source == "vim.notify" and first.debug.tag == "notify",
+	"debug metadata captures source and tag"
+)
 check(
 	first.debug.stack and first.debug.stack[1].source:find("tests/smoke.lua", 1, true),
 	"debug metadata captures caller stack"
 )
 check(
-	vim.tbl_contains(notification_source.preview(first), "- **bus_id**: `" .. first.debug.bus_id .. "`"),
+	vim.tbl_contains(
+		notification_source.preview(first),
+		"- **bus_id**: `" .. first.debug.bus_id .. "`"
+	),
 	"picker preview exposes bus id"
 )
 check(notification_records[1].id == first.id, "picker source preserves record fields")
@@ -73,7 +86,10 @@ vim.ui.select = function(items, _, callback)
 	callback(items[1], 1)
 end
 notify.picker({ backend = "select" })
-check(selected_items and selected_items[1]:find("Smoke", 1, true), "select picker displays searchable history")
+check(
+	selected_items and selected_items[1]:find("Smoke", 1, true),
+	"select picker displays searchable history"
+)
 check(vim.fn.getreg("+") == "first message", "select picker copies selected message")
 vim.ui.select = original_select
 notify.setup({ animation = false, picker = "select", debug = true })
@@ -89,8 +105,10 @@ vim.ui.select = original_picker_select
 notify.setup({ animation = false })
 vim.api.nvim_set_hl(0, "Normal", { fg = "#ffffff", bg = "NONE" })
 vim.api.nvim_set_hl(0, "NotifyERRORBody", { fg = "#ffffff", bg = "NONE" })
-local transparent = vim.notify("transparent", vim.log.levels.ERROR, { timeout = false, hide_from_history = true })
-local transparent_fade = vim.api.nvim_get_hl(0, { name = "NotifyFade" .. transparent.id .. "Body", link = false })
+local transparent =
+	vim.notify("transparent", vim.log.levels.ERROR, { timeout = false, hide_from_history = true })
+local transparent_fade =
+	vim.api.nvim_get_hl(0, { name = "NotifyFade" .. transparent.id .. "Body", link = false })
 check(transparent_fade.bg == nil, "transparent notification fade keeps background transparent")
 transparent.win:close()
 local fidget_source = notification_source.source("fidget")
@@ -100,11 +118,16 @@ local visual_lines = vim.api.nvim_buf_get_lines(visual.win.buf, 0, -1, false)
 check(vim.bo[visual.win.buf].filetype == "markdown", "notification buffers use Markdown highlights")
 check(vim.wo[visual.win.win].conceallevel == 0, "Markdown syntax markers remain visible")
 check(
-	vim.wo[visual.win.win].winhighlight:find("EndOfBuffer:NotifyFade" .. visual.id .. "Body", 1, true),
+	vim.wo[visual.win.win].winhighlight:find(
+		"EndOfBuffer:NotifyFade" .. visual.id .. "Body",
+		1,
+		true
+	),
 	"buffer-end rows use notification background"
 )
 check(visual_lines[3]:find("**body line 1**", 1, true), "Markdown markers remain visible")
-local markdown_marks = vim.api.nvim_buf_get_extmarks(visual.win.buf, visual.namespace, 0, -1, { details = true })
+local markdown_marks =
+	vim.api.nvim_buf_get_extmarks(visual.win.buf, visual.namespace, 0, -1, { details = true })
 check(
 	vim.tbl_contains(
 		vim.tbl_map(function(mark)
@@ -116,7 +139,10 @@ check(
 )
 check(#visual_lines == 4 and visual_lines[2]:find("━", 1, true), "notification title separator")
 check(#vim.api.nvim_buf_get_extmarks(visual.win.buf, -1, 0, -1, {}) > 0, "notification highlights")
-check(vim.fn.strdisplaywidth(visual_lines[2]) == visual.win.opts.width, "separator fills notification window width")
+check(
+	vim.fn.strdisplaywidth(visual_lines[2]) == visual.win.opts.width,
+	"separator fills notification window width"
+)
 local replaced = vim.notify("replaced message", vim.log.levels.ERROR, {
 	id = "smoke",
 	timeout = false,
@@ -125,8 +151,10 @@ check(replaced == first and replaced.level == "ERROR", "replacement by string id
 check(#notify.history() == 2, "replacement should not duplicate history")
 
 notify.setup({ animation = false, merge_duplicates = 100 })
-local duplicate = vim.notify("duplicate message", vim.log.levels.WARN, { title = "Duplicate", timeout = 10 })
-local duplicate_again = vim.notify("duplicate message", vim.log.levels.WARN, { title = "Duplicate", timeout = 10 })
+local duplicate =
+	vim.notify("duplicate message", vim.log.levels.WARN, { title = "Duplicate", timeout = 10 })
+local duplicate_again =
+	vim.notify("duplicate message", vim.log.levels.WARN, { title = "Duplicate", timeout = 10 })
 check(duplicate_again == duplicate, "identical notifications merge within the configured window")
 check(#notify.history() == 3, "merged notification should not duplicate history")
 local different_duplicate = vim.notify("duplicate message", vim.log.levels.ERROR, {
@@ -145,7 +173,14 @@ local replaced_by_record = vim.notify("replaced again", nil, {
 	timeout = false,
 })
 check(replaced_by_record == first and replaced_by_record.level == "ERROR", "replacement by record")
-for _, style in ipairs({ "default", "minimal", "simple", "compact", "wrapped-compact", "wrapped-default" }) do
+for _, style in ipairs({
+	"default",
+	"minimal",
+	"simple",
+	"compact",
+	"wrapped-compact",
+	"wrapped-default",
+}) do
 	notify.setup({ animation = false, style = style })
 	local styled = vim.notify("style message", vim.log.levels.INFO, { timeout = false })
 	check(styled.win and styled.win:valid(), "renderer " .. style .. " opens")
@@ -158,7 +193,10 @@ local hidden = vim.notify("hidden", vim.log.levels.WARN, {
 	timeout = false,
 })
 check(not vim.tbl_contains(notify.history(), hidden), "hidden history record")
-check(vim.tbl_contains(notify.history({ include_hidden = true }), hidden), "included hidden history record")
+check(
+	vim.tbl_contains(notify.history({ include_hidden = true }), hidden),
+	"included hidden history record"
+)
 
 local expiring = vim.notify("expires", vim.log.levels.INFO, { timeout = 10 })
 vim.wait(250, function()
@@ -176,7 +214,10 @@ check(
 vim.wait(150, function()
 	return queued_second.win ~= nil
 end, 10)
-check(queued_second.win and not queued_second.closed, "queued notification appears after expiration")
+check(
+	queued_second.win and not queued_second.closed,
+	"queued notification appears after expiration"
+)
 
 local persistent = vim.notify("persistent", vim.log.levels.INFO, { timeout = false })
 notify.dismiss()
@@ -198,7 +239,8 @@ check(deferred_record and deferred.id == deferred_record.id, "fast-event notific
 notify.dismiss()
 notify.clear_history()
 
-local namespaced = vim.notify("writing", nil, { id = "cmdline.nvim:string:bufwrite", timeout = false })
+local namespaced =
+	vim.notify("writing", nil, { id = "cmdline.nvim:string:bufwrite", timeout = false })
 local namespaced_win = namespaced.win
 local history_size = #notify.history()
 vim.in_fast_event = function()
@@ -212,11 +254,15 @@ check(
 	end),
 	"fast-event update by namespaced id"
 )
-check(namespaced.win == namespaced_win and #notify.history() == history_size, "id update preserves window and history")
+check(
+	namespaced.win == namespaced_win and #notify.history() == history_size,
+	"id update preserves window and history"
+)
 local independent = vim.notify("other producer", nil, { id = "other:bufwrite", timeout = false })
 check(independent ~= namespaced, "producer namespaces remain independent")
 notify.dismiss()
-local reopened = vim.notify("new write", nil, { id = "cmdline.nvim:string:bufwrite", timeout = false })
+local reopened =
+	vim.notify("new write", nil, { id = "cmdline.nvim:string:bufwrite", timeout = false })
 check(reopened ~= namespaced and not reopened.closed, "closed id creates a new record")
 notify.dismiss()
 notify.clear_history()
@@ -238,7 +284,8 @@ check(#received == 1 and received[1].content == "received", "bus level filtering
 local original_echo = vim.api.nvim_echo
 local failure_reported = false
 vim.api.nvim_echo = function(chunks)
-	failure_reported = chunks[1] and tostring(chunks[1][1]):find("notify bus subscriber failed", 1, true) ~= nil
+	failure_reported = chunks[1]
+		and tostring(chunks[1][1]):find("notify bus subscriber failed", 1, true) ~= nil
 end
 local remove_failure_subscriber = notify.subscribe(
 	"notify-test-failure",
@@ -269,12 +316,24 @@ notify.setup({
 })
 local routed = 0
 local routed_fanout = 0
-local remove_routed = notify.subscribe("notify-test-route", { exact = { "notify", "route.test" } }, nil, function()
-	routed = routed + 1
-end, "custom")
-local remove_fanout = notify.subscribe("notify-test-fanout", { exact = { "notify" } }, nil, function()
-	routed_fanout = routed_fanout + 1
-end, "fidget")
+local remove_routed = notify.subscribe(
+	"notify-test-route",
+	{ exact = { "notify", "route.test" } },
+	nil,
+	function()
+		routed = routed + 1
+	end,
+	"custom"
+)
+local remove_fanout = notify.subscribe(
+	"notify-test-fanout",
+	{ exact = { "notify" } },
+	nil,
+	function()
+		routed_fanout = routed_fanout + 1
+	end,
+	"fidget"
+)
 notify.bus.emit("notify", vim.log.levels.INFO, "vim source", {}, { source = "vim.notify" })
 notify.send("direct api", vim.log.levels.INFO, { timeout = false })
 notify.emit("route.test", vim.log.levels.INFO, "custom route")
@@ -283,7 +342,10 @@ vim.notify("file written", vim.log.levels.INFO)
 vim.wait(100, function()
 	return #require("notify.fidget").history() > #fidget_history
 end)
-check(#require("notify.fidget").history() == #fidget_history + 1, "message pattern routes vim.notify to fidget")
+check(
+	#require("notify.fidget").history() == #fidget_history + 1,
+	"message pattern routes vim.notify to fidget"
+)
 local routed_fidget = require("notify.fidget").history()[#fidget_history + 1]
 check(routed_fidget.source == "vim.notify", "Fidget routed history preserves original source")
 check(
@@ -303,7 +365,10 @@ vim.wait(100, function()
 	return #require("notify.fidget").history() > fidget_count
 end)
 check(#notify.history() == notification_count, "msg.show route skips notification backend")
-check(#require("notify.fidget").history() == fidget_count + 1, "msg.show route reaches fidget backend")
+check(
+	#require("notify.fidget").history() == fidget_count + 1,
+	"msg.show route reaches fidget backend"
+)
 remove_routed()
 remove_fanout()
 notify.setup({
@@ -361,7 +426,10 @@ vim.wait(250, function()
 	return fidget_win ~= nil
 end, 10)
 local fidget_line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(fidget_win), 0, 1, false)[1]
-check(vim.api.nvim_win_get_width(fidget_win) == vim.fn.strdisplaywidth(fidget_line), "fidget fits short content")
+check(
+	vim.api.nvim_win_get_width(fidget_win) == vim.fn.strdisplaywidth(fidget_line),
+	"fidget fits short content"
+)
 local fidget_max_width = math.max(1, vim.o.columns - 2)
 fidget.progress(string.rep("long message ", 10), {
 	client_id = 7,
@@ -402,7 +470,10 @@ vim.wait(150, function()
 	return #fidget_wins == 2
 end, 10)
 check(#fidget_wins == 2, "fidget stacks concurrent task windows")
-check(terminal:valid() and vim.api.nvim_win_is_valid(terminal_backdrop), "fidget leaves terminal visible")
+check(
+	terminal:valid() and vim.api.nvim_win_is_valid(terminal_backdrop),
+	"fidget leaves terminal visible"
+)
 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 	if vim.bo[vim.api.nvim_win_get_buf(win)].filetype == "win_backdrop" then
 		check(win == terminal_backdrop, "fidget does not cover terminal with a backdrop")
@@ -500,7 +571,10 @@ check(
 )
 check(lsp_record.debug.token == "smoke", "LSP progress history captures token")
 check(
-	vim.tbl_contains(require("notify.integrations.fzf").preview(lsp_record), "- **LSP Client**: `smoke` (#1)"),
+	vim.tbl_contains(
+		require("notify.integrations.fzf").preview(lsp_record),
+		"- **LSP Client**: `smoke` (#1)"
+	),
 	"LSP progress picker preview shows client"
 )
 vim.wait(100, function()
@@ -526,7 +600,10 @@ fidget.dismiss()
 terminal:close()
 vim.api.nvim_set_hl(0, "Normal", original_normal)
 vim.o.termguicolors = original_termguicolors
-check(#notify.history({ include_hidden = true }) == history_before_progress, "progress outside notification history")
+check(
+	#notify.history({ include_hidden = true }) == history_before_progress,
+	"progress outside notification history"
+)
 check(fidget.history()[2].state == "dismissed", "fidget dismissal updates history")
 fidget.clear_history()
 check(#fidget.history() == 0, "clear fidget history")
@@ -575,7 +652,10 @@ for count = 1, 5 do
 					return false
 				end
 				local row = item.task.win.opts.row
-				check(not previous or row > previous, "Fidget windows never overlap while adding tasks")
+				check(
+					not previous or row > previous,
+					"Fidget windows never overlap while adding tasks"
+				)
 				previous = row
 			end
 			return subset[#subset].task.win ~= nil and subset[1].task.target_row == nil
@@ -584,13 +664,20 @@ for count = 1, 5 do
 	)
 end
 local saved_columns = vim.o.columns
-local width_task = { title = "Width", message = string.rep("中文abc", 12), level = "none", icon = "" }
+local width_task =
+	{ title = "Width", message = string.rep("中文abc", 12), level = "none", icon = "" }
 local width_items = { { key = "width-test", task = width_task } }
 vim.o.columns = 120
 view.layout(width_items, { animate = false }, changed, function() end)
 local full_line = vim.api.nvim_buf_get_lines(width_task.win.buf, 0, -1, false)[1]
-check(width_task.win.opts.width == vim.fn.strdisplaywidth(full_line), "default Fidget width fits full content")
-check(full_line == "Width: " .. width_task.message, "default width uses more than forty percent of editor")
+check(
+	width_task.win.opts.width == vim.fn.strdisplaywidth(full_line),
+	"default Fidget width fits full content"
+)
+check(
+	full_line == "Width: " .. width_task.message,
+	"default width uses more than forty percent of editor"
+)
 vim.o.columns = 60
 view.layout(width_items, { animate = false }, changed, function() end)
 check(width_task.win.opts.width <= 58, "Fidget width stays inside editor margins")
@@ -609,12 +696,16 @@ vim.o.columns = saved_columns
 local original_lines = vim.o.lines
 vim.o.lines = 5
 view.layout(entries, { animate = false, max_visible = 5 }, changed, function() end)
-check(entries[3].task.win ~= nil and entries[4].task.win == nil, "Fidget capacity respects available editor rows")
+check(
+	entries[3].task.win ~= nil and entries[4].task.win == nil,
+	"Fidget capacity respects available editor rows"
+)
 vim.o.lines = original_lines
 local target = entries[1].task.target_row
 view.refresh(entries, view_opts)
 check(entries[1].task.target_row == target, "spinner refresh does not restart layout")
-local spinner_task = { title = "spinner redraw", level = "INFO", spinner = { "A", "B" }, spinner_interval = 50 }
+local spinner_task =
+	{ title = "spinner redraw", level = "INFO", spinner = { "A", "B" }, spinner_interval = 50 }
 local spinner_items = { { key = "spinner-redraw", task = spinner_task } }
 view.layout(spinner_items, { animate = false }, changed, function() end)
 local repeated_fidget_highlights = 0
@@ -668,7 +759,10 @@ for _, preset in ipairs({ "static", "fade", "slide", "slide_out", "fade_in_slide
 		end, 5),
 		"queue advances after animated close: " .. preset
 	)
-	check(animated.closed and animated.win == nil, "exiting window releases capacity only after closing")
+	check(
+		animated.closed and animated.win == nil,
+		"exiting window releases capacity only after closing"
+	)
 	notify.dismiss()
 end
 notify.setup({ animation = { preset = "fade", duration = 240, fps = 60 }, max_visible = 1 })
@@ -715,19 +809,27 @@ end, 5)
 vim.api.nvim_set_hl = set_hl
 vim.api.nvim__redraw = redraw
 check(fade_completed, "fade entry and exit finish within configured duration tolerance")
-check((vim.uv.hrtime() - fade_started) / 1e6 >= 400, "fade does not skip configured transition duration")
+check(
+	(vim.uv.hrtime() - fade_started) / 1e6 >= 400,
+	"fade does not skip configured transition duration"
+)
 check(fade_frames >= 24, "fade samples opacity at configured frame rate")
 check(global_fade_writes == 0, "fade animation keeps generated highlights window-local")
 check(notification_redraws > 0, "fade animation submits highlight updates")
 check(invalid_notification_redraws == 0, "fade redraw stays scoped to its notification window")
 check(geometry_updates == 0, "opacity-only animation does not reconfigure window geometry")
 notify.dismiss()
-notify.setup({ animation = { preset = "slide_out", duration = 120 }, max_visible = 2, top_down = true })
+notify.setup({
+	animation = { preset = "slide_out", duration = 120 },
+	max_visible = 2,
+	top_down = true,
+})
 local exiting_first = vim.notify("first exit", nil, { timeout = 10 })
-local exiting_second = vim.notify("second exit", nil, { timeout = 10, animation = { duration = 300 } })
+local exiting_second =
+	vim.notify("second exit", nil, { timeout = 10, animation = { duration = 300 } })
 local first_row = exiting_first.frame.row
-local queued_first = vim.notify("third", nil, { timeout = false })
-local queued_second = vim.notify("fourth", nil, { timeout = false })
+local exiting_queued_first = vim.notify("third", nil, { timeout = false })
+local exiting_queued_second = vim.notify("fourth", nil, { timeout = false })
 check(
 	vim.wait(1000, function()
 		return exiting_first.win == nil
@@ -735,23 +837,36 @@ check(
 	"first exit completes"
 )
 check(exiting_second.win and exiting_second.closed, "second exit is still running")
-check(queued_first.queued and not queued_first.win, "queue waits for remaining exit")
+check(
+	exiting_queued_first.queued and not exiting_queued_first.win,
+	"queue waits for remaining exit"
+)
 local late = vim.notify("late arrival", nil, { timeout = false })
 check(late.queued and not late.win, "new arrivals wait behind queued notifications during exit")
 check(
 	vim.wait(1000, function()
-		return queued_second.win ~= nil
+		return exiting_queued_second.win ~= nil
 	end, 5),
 	"queue fills after all exits complete"
 )
-check(queued_first.frame.row == first_row, "first queued notification enters at its final row")
-check(queued_second.frame.row > queued_first.frame.row, "queued notifications retain their order")
+check(
+	exiting_queued_first.frame.row == first_row,
+	"first queued notification enters at its final row"
+)
+check(
+	exiting_queued_second.frame.row > exiting_queued_first.frame.row,
+	"queued notifications retain their order"
+)
 check(late.queued, "late arrival cannot bypass the queue")
 notify.dismiss()
 local saved_lines = vim.o.lines
 vim.o.lines = 80
 for _, top_down in ipairs({ true, false }) do
-	notify.setup({ animation = { preset = "fade", duration = 160 }, max_visible = 5, top_down = top_down })
+	notify.setup({
+		animation = { preset = "fade", duration = 160 },
+		max_visible = 5,
+		top_down = top_down,
+	})
 	local moving = {}
 	local overlap = false
 	local function inspect_spacing()
@@ -787,7 +902,9 @@ for _, top_down in ipairs({ true, false }) do
 	check(
 		vim.wait(1500, function()
 			inspect_spacing()
-			return moving[6].win ~= nil and not moving[6].opening and moving[2].animation_handle == nil
+			return moving[6].win ~= nil
+				and not moving[6].opening
+				and moving[2].animation_handle == nil
 		end, 1),
 		"queued notification enters during smooth restacking"
 	)
@@ -800,7 +917,10 @@ for _, top_down in ipairs({ true, false }) do
 end
 vim.o.lines = saved_lines
 notify.setup({
-	animation = { preset = { open = { height = 1, opacity = 0 }, close = { opacity = 0 } }, duration = 30 },
+	animation = {
+		preset = { open = { height = 1, opacity = 0 }, close = { opacity = 0 } },
+		duration = 30,
+	},
 })
 local custom_stage = vim.notify("first\nsecond\nthird", nil, { timeout = false, style = "minimal" })
 check(custom_stage.frame.height == 1, "custom stage supplies initial geometry")
@@ -810,13 +930,19 @@ check(
 	end, 5),
 	"custom stage completes"
 )
-check(custom_stage.frame.height == 3 and custom_stage.frame.opacity == 1, "custom stage reaches measured target")
+check(
+	custom_stage.frame.height == 3 and custom_stage.frame.opacity == 1,
+	"custom stage reaches measured target"
+)
 notify.dismiss()
 notify.setup({ animation = { duration = 100 }, max_visible = 1 })
 local kept = vim.notify("kept", nil, { keep = true, timeout = 1 })
 local pending = vim.notify("pending", nil, { timeout = false })
 notify.dismiss()
-check(kept.closed and pending.closed and kept.win == nil, "dismiss interrupts animations and ignores keep")
+check(
+	kept.closed and pending.closed and kept.win == nil,
+	"dismiss interrupts animations and ignores keep"
+)
 notify.setup({ animation = false, max_visible = 1 })
 local external = vim.notify("external close", nil, { timeout = false })
 local next_record = vim.notify("next", nil, { timeout = false })
@@ -826,7 +952,10 @@ notify.dismiss()
 notify.setup({ animation = false, timeout = false, lsp_progress = false })
 local persistent_default = vim.notify("global persistent timeout")
 vim.wait(20)
-check(persistent_default.win and persistent_default.timer == nil and not persistent_default.closed, "global timeout false")
+check(
+	persistent_default.win and persistent_default.timer == nil and not persistent_default.closed,
+	"global timeout false"
+)
 notify.dismiss({ pending = true })
 notify.restore()
 check(vim.notify == original_notify, "notify restore")

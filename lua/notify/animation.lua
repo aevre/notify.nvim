@@ -14,7 +14,11 @@ function M.run(record, target, options, apply, done)
 	local generation = record.animation_generation
 	local from = vim.deepcopy(record.frame or target)
 	local function update(progress, ctx)
-		if generation ~= record.animation_generation or not record.win or not record.win:valid() then
+		if
+			generation ~= record.animation_generation
+			or not record.win
+			or not record.win:valid()
+		then
 			return
 		end
 		local frame = {}

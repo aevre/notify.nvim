@@ -11,7 +11,12 @@
 ---@field handler fun(message: notify.BusMessage)
 ---@field backend? string
 
-local M = { subscribers = {}, queue = {}, dispatching = false, next_id = 0 }
+local M = {
+	subscribers = {},
+	queue = {},
+	dispatching = false,
+	next_id = 0,
+}
 
 local util = require("notify.util")
 local message_regexes = {}

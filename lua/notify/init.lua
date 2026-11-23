@@ -52,7 +52,9 @@ local function notify(message, level, opts)
 			if not info then
 				break
 			end
-			if info.source ~= "=[C]" and not info.source:match("[/\\]notify[/\\](init|bus)%.lua$") then
+			if
+				info.source ~= "=[C]" and not info.source:match("[/\\]notify[/\\](init|bus)%.lua$")
+			then
 				stack[#stack + 1] = {
 					source = info.source,
 					line = info.currentline,
@@ -68,12 +70,24 @@ local function notify(message, level, opts)
 		meta.result = { id = meta.notify_id }
 		meta.source = (opts and opts.source) or "vim.notify"
 		opts = vim.tbl_extend("force", opts or {}, { _debug_stack = meta.debug_stack })
-		Bus.emit("notify", Notifications.level_info(level or vim.log.levels.INFO).value, message, opts, meta)
+		Bus.emit(
+			"notify",
+			Notifications.level_info(level or vim.log.levels.INFO).value,
+			message,
+			opts,
+			meta
+		)
 		return meta.result
 	end
 	meta.source = (opts and opts.source) or "vim.notify"
 	opts = vim.tbl_extend("force", opts or {}, { _debug_stack = meta.debug_stack })
-	local bus_id = Bus.emit("notify", Notifications.level_info(level or vim.log.levels.INFO).value, message, opts, meta)
+	local bus_id = Bus.emit(
+		"notify",
+		Notifications.level_info(level or vim.log.levels.INFO).value,
+		message,
+		opts,
+		meta
+	)
 	local record = bus_records[bus_id]
 	bus_records[bus_id] = nil
 	return record or { id = bus_id }
@@ -177,7 +191,11 @@ end
 ---@param meta? table
 ---@return integer
 function M.emit(tag, level, content, data, meta)
-	meta = vim.tbl_extend("force", meta or {}, { level_provided = level ~= nil, fast = vim.in_fast_event() })
+	meta = vim.tbl_extend(
+		"force",
+		meta or {},
+		{ level_provided = level ~= nil, fast = vim.in_fast_event() }
+	)
 	local id = Bus.emit(tag, level, content, data, meta)
 	local record = bus_records[id]
 	bus_records[id] = nil

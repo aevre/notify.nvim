@@ -45,7 +45,9 @@ local function content(task, opts, row, index)
 	local level_info = levels[level] or levels.INFO
 	local icon = task.spinner
 			and spinner(
-				type(task.spinner) == "table" and task.spinner or task.spinner_frames or opts.spinner_frames,
+				type(task.spinner) == "table" and task.spinner
+					or task.spinner_frames
+					or opts.spinner_frames,
 				task.spinner_interval or opts.spinner_interval or 200
 			)
 		or task.icon
@@ -59,7 +61,8 @@ local function content(task, opts, row, index)
 	if task.percentage then
 		label = label .. (" %d%%"):format(task.percentage)
 	end
-	local available = math.max(0, max_width - vim.fn.strdisplaywidth(icon) - (icon ~= "" and 2 or 0))
+	local available =
+		math.max(0, max_width - vim.fn.strdisplaywidth(icon) - (icon ~= "" and 2 or 0))
 	while vim.fn.strdisplaywidth(label) > available and #label > 0 do
 		label = vim.fn.strcharpart(label, 0, vim.fn.strchars(label) - 1)
 	end
@@ -88,8 +91,10 @@ local function content(task, opts, row, index)
 			},
 		})
 	end
-	local content_key =
-		table.concat({ line, level, tostring(task.spinner), tostring(task.title), width, col, index }, "\000")
+	local content_key = table.concat(
+		{ line, level, tostring(task.spinner), tostring(task.title), width, col, index },
+		"\000"
+	)
 	if task.content_key == content_key then
 		return
 	end
@@ -136,7 +141,11 @@ local function content(task, opts, row, index)
 		util.highlight(task.win.buf, ns, "NotifyProgressPercentage", 0, start - 1, finish)
 	end
 
-	if task.win.opts.width ~= width or task.win.opts.col ~= col or task.win.opts.zindex ~= 80 + index then
+	if
+		task.win.opts.width ~= width
+		or task.win.opts.col ~= col
+		or task.win.opts.zindex ~= 80 + index
+	then
 		task.win.opts.width, task.win.opts.col, task.win.opts.zindex = width, col, 80 + index
 		task.win:update()
 	end
@@ -205,13 +214,22 @@ function M.layout(items, opts, changed, opened)
 			task.target_row = nil
 		elseif task.target_row ~= row then
 			task.target_row = row
-			Animate(win.opts.row, row, function(value, ctx)
-				move(value)
-				if ctx.done and task.win == win then
-					task.target_row = nil
-					changed()
-				end
-			end, vim.tbl_extend("force", opts.animation or {}, { int = true, id = "notify:fidget:" .. item.key }))
+			Animate(
+				win.opts.row,
+				row,
+				function(value, ctx)
+					move(value)
+					if ctx.done and task.win == win then
+						task.target_row = nil
+						changed()
+					end
+				end,
+				vim.tbl_extend(
+					"force",
+					opts.animation or {},
+					{ int = true, id = "notify:fidget:" .. item.key }
+				)
+			)
 		end
 	end
 	for index = count + 1, #items do

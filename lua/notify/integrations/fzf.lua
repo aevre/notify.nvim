@@ -45,15 +45,21 @@ end
 function M.source(kind)
 	local items = {}
 	for index, record in ipairs(records(kind)) do
-		local message = type(record.message) == "table" and table.concat(record.message, " ") or record.message
+		local message = type(record.message) == "table" and table.concat(record.message, " ")
+			or record.message
 		local title = section(record.title)
 		if title == "Messages" or title == "Notification" then
 			title = ""
 		end
 		local time = record.title and record.title[2] or ""
 		local levels = require("notify.levels")
-		local icon = record.icon or (levels[section(record.level)] and levels[section(record.level)].icon) or ""
-		local display = table.concat({ time, title, icon, "[" .. section(record.level) .. "]", message or "" }, " ")
+		local icon = record.icon
+			or (levels[section(record.level)] and levels[section(record.level)].icon)
+			or ""
+		local display = table.concat(
+			{ time, title, icon, "[" .. section(record.level) .. "]", message or "" },
+			" "
+		)
 		items[index] = {
 			raw = record,
 			title = title,
@@ -71,8 +77,13 @@ end
 ---@return string[]
 function M.preview(record)
 	local title = section(record.title)
-	local lines =
-		{ "# " .. (title ~= "" and title ~= "Messages" and title ~= "Notification" and title or "Notifications") }
+	local lines = {
+		"# "
+			.. (
+				title ~= "" and title ~= "Messages" and title ~= "Notification" and title
+				or "Notifications"
+			),
+	}
 	if type(record.title) == "table" and record.title[2] and record.title[2] ~= "" then
 		lines[#lines + 1] = ""
 		lines[#lines + 1] = "**Time:** " .. record.title[2]
@@ -102,11 +113,15 @@ function M.preview(record)
 			end
 		end
 		if record.debug.client_name then
-			lines[#lines + 1] =
-				string.format("- **LSP Client**: `%s` (#%s)", record.debug.client_name, record.debug.client_id)
+			lines[#lines + 1] = string.format(
+				"- **LSP Client**: `%s` (#%s)",
+				record.debug.client_name,
+				record.debug.client_id
+			)
 		end
 		if record.debug.token then
-			lines[#lines + 1] = string.format("- **Progress Token**: `%s`", tostring(record.debug.token))
+			lines[#lines + 1] =
+				string.format("- **Progress Token**: `%s`", tostring(record.debug.token))
 		end
 		if record.debug.stack then
 			lines[#lines + 1] = ""
@@ -139,7 +154,8 @@ function M.format_entry(record, index, ansi_from_hl)
 	local level = section(record.level)
 	local highlight = LEVEL_HIGHLIGHTS[level] or "Comment"
 	local icon = record.icon or (levels[level] and levels[level].icon) or ""
-	local message = type(record.message) == "table" and table.concat(record.message, " ") or record.message
+	local message = type(record.message) == "table" and table.concat(record.message, " ")
+		or record.message
 	local time = record.title and record.title[2] or ""
 	local title = section(record.title)
 	if title == "Messages" or title == "Notification" then
@@ -160,7 +176,8 @@ end
 
 ---@param record table
 function M.copy_record(record)
-	local message = type(record.message) == "table" and table.concat(record.message, "\n") or record.message
+	local message = type(record.message) == "table" and table.concat(record.message, "\n")
+		or record.message
 	vim.fn.setreg("+", message)
 	vim.fn.setreg('"', message)
 	vim.notify("Copied notification message", vim.log.levels.INFO, { hide_from_history = true })
@@ -180,7 +197,12 @@ function M.open_record(record, kind)
 	vim.bo[buf].readonly = true
 	vim.b[buf].notify_history_kind = kind or "notification"
 	vim.b[buf].notify_history_id = record.id
-	vim.keymap.set("n", "q", "<cmd>bdelete<cr>", { buffer = buf, silent = true, desc = "Close notification history" })
+	vim.keymap.set(
+		"n",
+		"q",
+		"<cmd>bdelete<cr>",
+		{ buffer = buf, silent = true, desc = "Close notification history" }
+	)
 	vim.api.nvim_win_set_buf(0, buf)
 	return buf
 end
@@ -194,7 +216,10 @@ function M.open(opts)
 	local builtin = require("fzf-lua.previewer.builtin")
 	local items = M.source(kind)
 	if #items == 0 then
-		vim.notify(kind == "fidget" and "No Fidget history found" or "No notifications found", vim.log.levels.WARN)
+		vim.notify(
+			kind == "fidget" and "No Fidget history found" or "No notifications found",
+			vim.log.levels.WARN
+		)
 		return
 	end
 	local by_index, entries = {}, {}

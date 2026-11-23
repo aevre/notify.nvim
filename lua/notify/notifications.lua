@@ -48,7 +48,13 @@
 ---@field _ids table<integer|string, integer>
 ---@field _next_id integer
 ---@field _queue notify.Record[]
-local M = { _history = {}, _notifications = {}, _ids = {}, _next_id = 0, _queue = {} }
+local M = {
+	_history = {},
+	_notifications = {},
+	_ids = {},
+	_next_id = 0,
+	_queue = {},
+}
 local Config = require("notify.config")
 local LEVELS = require("notify.levels")
 local Renderer = require("notify.render")
@@ -70,7 +76,8 @@ local function level_info(level)
 	if type(level) == "string" then
 		local name = level:upper()
 		local info = LEVELS[name]
-		return type(info) == "table" and info or LEVELS.INFO, type(info) == "table" and name or "INFO"
+		return type(info) == "table" and info or LEVELS.INFO,
+			type(info) == "table" and name or "INFO"
 	end
 	for name, info in pairs(LEVELS) do
 		if type(info) == "table" and info.value == level then
@@ -129,7 +136,9 @@ local function blend_color(from, to, amount)
 	local result = {}
 	for index in ipairs({ 2, 4, 6 }) do
 		result[index] = math.floor(
-			channel(from, ({ 2, 4, 6 })[index]) * (1 - amount) + channel(to, ({ 2, 4, 6 })[index]) * amount + 0.5
+			channel(from, ({ 2, 4, 6 })[index]) * (1 - amount)
+				+ channel(to, ({ 2, 4, 6 })[index]) * amount
+				+ 0.5
 		)
 	end
 	return ("#%02x%02x%02x"):format(result[1], result[2], result[3])
@@ -149,7 +158,11 @@ local function set_fade_highlights(record, amount)
 			FloatBorder = "Border",
 			FloatTitle = "Title",
 		}) do
-			vim.api.nvim_set_hl(record.highlight_namespace, group, { link = fade_group(record, role) })
+			vim.api.nvim_set_hl(
+				record.highlight_namespace,
+				group,
+				{ link = fade_group(record, role) }
+			)
 		end
 	end
 	local level = record.level_name
@@ -161,7 +174,8 @@ local function set_fade_highlights(record, amount)
 	for _, role in ipairs(roles) do
 		local source = "Notify" .. level .. role
 		local target = hl_color(source, "fg", hl_color("Normal", "fg", "#ffffff"))
-		local fg = transparent and blend_color("#000000", target, amount) or blend_color(fade_bg, target, amount)
+		local fg = transparent and blend_color("#000000", target, amount)
+			or blend_color(fade_bg, target, amount)
 		vim.api.nvim_set_hl(record.highlight_namespace, fade_group(record, role), {
 			fg = fg,
 			bg = fade_bg,
@@ -212,7 +226,10 @@ local function available_row(record)
 		or vim.o.lines - vim.o.cmdheight - config.margin.bottom - record.height - border
 	for _, item in ipairs(visible()) do
 		if config.top_down then
-			row = math.max(row, item.frame.row + math.max(item.frame.height, item.height) + border + config.gap)
+			row = math.max(
+				row,
+				item.frame.row + math.max(item.frame.height, item.height) + border + config.gap
+			)
 		else
 			row = math.min(row, item.frame.row - record.height - border - config.gap)
 		end
@@ -343,16 +360,22 @@ layout = function()
 	local rows = row_positions()
 	for _, record in ipairs(visible()) do
 		if not record.closed then
-			Animation.run(record, base_frame(record, rows[record.id]), options(record), apply, function()
-				if record.frame.row ~= rows[record.id] then
-					vim.schedule(layout)
-					return
+			Animation.run(
+				record,
+				base_frame(record, rows[record.id]),
+				options(record),
+				apply,
+				function()
+					if record.frame.row ~= rows[record.id] then
+						vim.schedule(layout)
+						return
+					end
+					if record.opening then
+						record.opening = false
+						start_timeout(record)
+					end
 				end
-				if record.opening then
-					record.opening = false
-					start_timeout(record)
-				end
-			end)
+			)
 		end
 	end
 end
@@ -534,7 +557,12 @@ function M.notify(message, level, opts, source, reserved_id)
 	local resolved_id = opts.id ~= nil and normalize_id(opts.id) or normalize_id(opts.replace)
 	local old = find_record(opts.replace) or find_record(opts.id)
 	local duplicate = false
-	if not old and opts.id == nil and opts.replace == nil and type(config.merge_duplicates) == "number" then
+	if
+		not old
+		and opts.id == nil
+		and opts.replace == nil
+		and type(config.merge_duplicates) == "number"
+	then
 		local now = util.now()
 		for _, candidate in pairs(M._notifications) do
 			if

@@ -1,4 +1,4 @@
-LUA_FILES := $(shell find lua plugin -name '*.lua')
+LUA_FILES := $(shell find lua plugin tests -name '*.lua')
 
 .PHONY: fmt fmt-check lint test health check
 

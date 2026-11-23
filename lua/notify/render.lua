@@ -43,7 +43,10 @@ function M.render(record, config, highlights, helpers)
 	else
 		local style = record.style or config.style
 		assert(
-			vim.tbl_contains({ "default", "compact", "minimal", "simple", "wrapped-default", "wrapped-compact" }, style),
+			vim.tbl_contains(
+				{ "default", "compact", "minimal", "simple", "wrapped-default", "wrapped-compact" },
+				style
+			),
 			"notify: unknown style: " .. tostring(style)
 		)
 		icon = record.icon or config.icons[record.level_name] or levels[record.level_name].icon
@@ -60,7 +63,8 @@ function M.render(record, config, highlights, helpers)
 			lines, body_start = message, 0
 		else
 			local compact = style == "compact" or style == "wrapped-compact"
-			lines = { icon .. "  " .. title .. (compact and "" or ("  " .. (record.title[2] or ""))) }
+			lines =
+				{ icon .. "  " .. title .. (compact and "" or ("  " .. (record.title[2] or ""))) }
 			if not compact then
 				lines[2], separator = "", true
 			end

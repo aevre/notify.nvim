@@ -6,7 +6,10 @@ function M.open(opts)
 	local kind = opts.kind == "fidget" and "fidget" or "notification"
 	local items = source.source(kind)
 	if #items == 0 then
-		vim.notify(kind == "fidget" and "No Fidget history found" or "No notifications found", vim.log.levels.WARN)
+		vim.notify(
+			kind == "fidget" and "No Fidget history found" or "No notifications found",
+			vim.log.levels.WARN
+		)
 		return
 	end
 	local pickers = require("telescope.pickers")
@@ -30,7 +33,13 @@ function M.open(opts)
 			sorter = conf.generic_sorter(opts),
 			previewer = conf.previewers.new_buffer_previewer({
 				define_preview = function(self, entry)
-					vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, source.preview(entry.value))
+					vim.api.nvim_buf_set_lines(
+						self.state.bufnr,
+						0,
+						-1,
+						false,
+						source.preview(entry.value)
+					)
 					vim.bo[self.state.bufnr].filetype = "markdown"
 				end,
 			}),

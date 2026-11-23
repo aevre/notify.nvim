@@ -210,24 +210,28 @@ end
 
 local function refresh_spinner()
 	if not spinner_timer then
-		spinner_timer = vim.fn.timer_start(math.max(50, tonumber(current_opts.spinner_interval) or 200), function()
-			vim.schedule(function()
-				local active = false
-				for _, task in pairs(progress) do
-					if task.spinner then
-						active = true
-						break
+		spinner_timer = vim.fn.timer_start(
+			math.max(50, tonumber(current_opts.spinner_interval) or 200),
+			function()
+				vim.schedule(function()
+					local active = false
+					for _, task in pairs(progress) do
+						if task.spinner then
+							active = true
+							break
+						end
 					end
-				end
-				if active then
-					View.refresh(visible_tasks, current_opts)
-					redraw()
-				else
-					util.stop_timer(spinner_timer)
-					spinner_timer = nil
-				end
-			end)
-		end, { ["repeat"] = -1 })
+					if active then
+						View.refresh(visible_tasks, current_opts)
+						redraw()
+					else
+						util.stop_timer(spinner_timer)
+						spinner_timer = nil
+					end
+				end)
+			end,
+			{ ["repeat"] = -1 }
+		)
 	end
 end
 
@@ -367,7 +371,10 @@ end
 function M.send(title, message, opts)
 	next_message_id = next_message_id + 1
 	local token = (opts and opts.token) or ("fidget:" .. next_message_id)
-	M.progress(message, vim.tbl_extend("force", opts or {}, { title = title, token = token, client_id = "user" }))
+	M.progress(
+		message,
+		vim.tbl_extend("force", opts or {}, { title = title, token = token, client_id = "user" })
+	)
 	return token
 end
 
@@ -398,7 +405,8 @@ function M.progress(message, opts)
 	previous.started = previous.started or util.now()
 	previous.sequence = previous.sequence or sequence()
 	previous.title, previous.message = opts.title or previous.title, message or previous.message
-	previous.percentage, previous.icon = opts.percentage or previous.percentage, opts.icon or previous.icon
+	previous.percentage, previous.icon =
+		opts.percentage or previous.percentage, opts.icon or previous.icon
 	previous.level = levels.name(opts.level or previous.level)
 	previous.spinner_interval = opts.spinner_interval or previous.spinner_interval
 	previous.spinner_frames = opts.spinner_frames or previous.spinner_frames
@@ -421,7 +429,10 @@ end
 ---@param opts? notify.FidgetTaskOpts
 ---@return string task_key
 function M.update(token, message, opts)
-	return M.progress(message, vim.tbl_extend("force", opts or {}, { token = token, client_id = "user" }))
+	return M.progress(
+		message,
+		vim.tbl_extend("force", opts or {}, { token = token, client_id = "user" })
+	)
 end
 
 ---@param token string
@@ -429,7 +440,10 @@ end
 ---@param opts? notify.FidgetTaskOpts
 ---@return string task_key
 function M.finish(token, message, opts)
-	return M.progress(message, vim.tbl_extend("force", opts or {}, { token = token, client_id = "user", kind = "end" }))
+	return M.progress(
+		message,
+		vim.tbl_extend("force", opts or {}, { token = token, client_id = "user", kind = "end" })
+	)
 end
 
 M.dismiss = M.restore

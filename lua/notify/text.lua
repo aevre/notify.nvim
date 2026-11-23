@@ -12,7 +12,9 @@ function M.highlight(buf, ns, line_count)
 			local trees = parser:parse()
 			if trees then
 				for _, tree in ipairs(trees) do
-					for capture, node, metadata in query:iter_captures(tree:root(), buf, 0, line_count) do
+					for capture, node, metadata in
+						query:iter_captures(tree:root(), buf, 0, line_count)
+					do
 						local name = query.captures[capture]
 						if not vim.startswith(name, "_") and name ~= "spell" then
 							local group = vim.api.nvim_get_hl_id_by_name("@" .. name .. "." .. lang)
